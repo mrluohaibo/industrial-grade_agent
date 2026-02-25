@@ -1,7 +1,7 @@
 from typing import Literal
 
 # Define available LLM types
-LLMType = Literal["basic", "reasoning", "vision","local_basic"]
+LLMType = Literal["basic", "reasoning", "vision", "local_basic", "rag"]
 
 # Define agent-LLM mapping
 AGENT_LLM_MAP: dict[str, LLMType] = {
@@ -13,4 +13,5 @@ AGENT_LLM_MAP: dict[str, LLMType] = {
     "browser": "vision",  # 浏览器操作使用vision llm
     "reporter": "basic",  # 编写报告使用basic llm
     "url_to_markdown": "basic", # 本地还存在点问题，生产环境改成basic
+    "rag": "basic",  # RAG检索使用basic llm
 }

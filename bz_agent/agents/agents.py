@@ -7,7 +7,7 @@ from bz_agent.tools import (
     python_repl_tool,
     browser_tool,
     read_file_tool,
-
+    rag_knowledge_retrieval_async,
 )
 
 from .llm import get_llm_by_type
@@ -37,4 +37,11 @@ url_to_markdown_agent = create_react_agent(
     get_llm_by_type(AGENT_LLM_MAP["url_to_markdown"]),
     tools=[page_html_tool,read_file_tool],
     prompt=lambda state: apply_prompt_template("url_to_markdown", state),
+)
+
+# RAG Agent for knowledge retrieval
+rag_agent = create_react_agent(
+    get_llm_by_type(AGENT_LLM_MAP["rag"]),
+    tools=[rag_knowledge_retrieval_async],
+    prompt=lambda state: apply_prompt_template("rag", state),
 )

@@ -21,7 +21,7 @@ from .init_config import (
 
 
 # Team configuration
-TEAM_MEMBERS = ["url_to_markdown", "coder", "browser", "reporter"]
+TEAM_MEMBERS = ["url_to_markdown", "coder", "browser", "reporter", "rag"]
 
 __all__ = [
     # Reasoning LLM

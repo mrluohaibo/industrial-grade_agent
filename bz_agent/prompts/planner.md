@@ -14,6 +14,7 @@ As a Deep Researcher, you can breakdown the major subject into sub-topics and ex
 - **`url_to_markdown`**: Retrieve the HTML source code of a webpage, extract the main content based on the source code, and output it in Markdown format.
 - **`coder`**: Executes Python or Bash commands, performs mathematical calculations, and outputs a Markdown report. Must be used for all mathematical computations.
 - **`browser`**: Directly interacts with web pages, performing complex operations and interactions. You can also leverage `browser` to perform in-domain search, like Facebook, Instagram, Github, etc.
+- **`rag`**: Retrieves relevant knowledge from the knowledge base using RAG (Retrieval-Augmented Generation). Use this agent when users ask questions that can be answered from existing knowledge or documents.
 - **`reporter`**: Write a professional report based on the result of each step.
 
 **Note**: Ensure that each step using `coder` and `browser` completes a full task, as session continuity cannot be preserved.

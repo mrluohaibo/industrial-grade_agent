@@ -7,7 +7,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from langgraph.graph import END
 
-from bz_agent.agents import  coder_agent, browser_agent,url_to_markdown_agent
+from bz_agent.agents import coder_agent, browser_agent, url_to_markdown_agent, rag_agent
 from bz_agent.agents.llm import get_llm_by_type
 from bz_agent.config import TEAM_MEMBERS
 from bz_agent.config.agents_map import AGENT_LLM_MAP
@@ -112,7 +112,7 @@ def planner_node(state: State) -> Command[Literal["supervisor", "__end__"]]:
     llm = get_llm_by_type("basic")
     if state.get("deep_thinking_mode"):
         llm = get_llm_by_type("reasoning")
-    #初始化中开启了search_before_planning，相当于计划前直接调用第三方得到了结果
+    # Initialize with search_before_planning enabled, meaning direct third-party call results before planning
     # if state.get("search_before_planning"):
     #     searched_content = tavily_tool.invoke({"query": state["messages"][-1].content})
     #     messages = deepcopy(messages)
@@ -147,9 +147,9 @@ def planner_node(state: State) -> Command[Literal["supervisor", "__end__"]]:
         goto=goto,
     )
 
-# state 就是一次从头到尾部的上下文
+# state is the context from beginning to end
 # def coordinator_node(state: State) -> Command[Literal["planner", "__end__"]]:
-#     """Coordinator node that communicate with customers."""
+#     """Coordinator node that communicates with customers."""
 #     logger.info("Coordinator talking.")
 #     messages = apply_prompt_template("coordinator", state)
 #     response = get_llm_by_type(AGENT_LLM_MAP["coordinator"]).invoke(messages)
@@ -166,7 +166,7 @@ def planner_node(state: State) -> Command[Literal["supervisor", "__end__"]]:
 
 
 def reporter_node(state: State) -> Command[Literal["supervisor"]]:
-    """Reporter node that write a final report."""
+    """Reporter node that writes a final report."""
     logger.info("Reporter write final report")
     messages = apply_prompt_template("reporter", state)
     response = get_llm_by_type(AGENT_LLM_MAP["reporter"]).invoke(messages)
@@ -187,7 +187,7 @@ def reporter_node(state: State) -> Command[Literal["supervisor"]]:
 
 
 def url_to_markdown_node(state: State) -> Command[Literal["supervisor"]]:
-    """Node for the browser agent that performs web browsing tasks."""
+    """Node for the url_to_markdown agent that extracts content from webpages."""
     logger.info("url_to_markdown agent starting task")
     start_time = time.time() * 1000
     result = url_to_markdown_agent.invoke(state)
@@ -207,3 +207,23 @@ def url_to_markdown_node(state: State) -> Command[Literal["supervisor"]]:
         goto="supervisor",
     )
 
+
+def rag_node(state: State) -> Command[Literal["supervisor"]]:
+    """Node for the RAG agent that performs knowledge retrieval tasks."""
+    logger.info("RAG agent starting task")
+    result = rag_agent.invoke(state)
+    logger.info("RAG agent completed task")
+    logger.debug(f"RAG agent response: {result['messages'][-1].content}")
+    return Command(
+        update={
+            "messages": [
+                HumanMessage(
+                    content=RESPONSE_FORMAT.format(
+                        "rag", result["messages"][-1].content
+                    ),
+                    name="rag",
+                )
+            ]
+        },
+        goto="supervisor",
+    )

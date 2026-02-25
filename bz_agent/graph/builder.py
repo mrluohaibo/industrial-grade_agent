@@ -8,6 +8,7 @@ from .nodes import (
     supervisor_node,
     reporter_node,
     planner_node,
+    rag_node,
 )
 
 # 这里不链接边嘛？
@@ -21,6 +22,7 @@ def build_graph():
     builder.add_node("coder", code_node)
     builder.add_node("browser", browser_node)
     builder.add_node("reporter", reporter_node)
+    builder.add_node("rag", rag_node)
     return builder.compile()
 
 
