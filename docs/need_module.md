@@ -1,0 +1,8 @@
+
+# 最终需求
+我需要一套在langgraph框架下的多agent企业级别的开发项目脚手架，现在已经初步完成了一个主agent,但还是缺少一些功能
+1.这个agent缺乏管理对话上下文的功能，也就是state中少了 一个会话id,而且需要根据这个会话id才能获取对应的上下文消息列表，另外对应会话的上下文消息列表应该存放在mongo中进行持久化，新的消息都会以会话id为关联存入mongo,
+所以state中应该有一个getMessageList(sessionId) -> messages类似的方法，还有一个 putMessage(sessionId,message) -> boolean 之类的方法来实现上面的要求， 另外获取和新增messages的地方应该统一修改下代码
+2.需要一个rag agent的node节点封装，rag实现代码在bz_agent/rag文件中，我们可以依据这个实现rag_agent的实现模块
+3.需要在mongo保存prompt提示词，然后可以在网页上进行重新配置，如此可以几时更改提示词后观察新的运行效果
+
