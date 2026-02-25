@@ -11,6 +11,7 @@ from langchain_core.tools import tool
 from bz_agent.rag.bm25_es_search import BM25Searcher
 from bz_agent.rag.embedding_data_handler import DataEmbeddingOrm, get_milvus_dataEmbeddingOrm
 from bz_agent.rag.multi_call_rag_api import MultiCallRagApi
+from utils.config_init import application_conf
 from utils.logger_config import logger
 
 
@@ -29,10 +30,11 @@ def get_rag_instance() -> MultiCallRagApi:
 
     if _rag_instance is None:
         # 从配置读取RAG相关参数（暂时使用硬编码值，后续可迁移到配置文件）
-        es_host = "http://192.168.99.108:9200"
-        es_basic_auth = ("buz_ac", "123456")
-        local_model_path = "H:/large_data/modelscope_model/bge_m3"
-        milvus_url = "http://192.168.99.108:19530"
+        es_host = application_conf.get_properties("es.host")
+        es_basic_auth = (application_conf.get_properties("es.u_name"), application_conf.get_properties("es.u_pwd"))
+
+        local_bge_m3_model_path = application_conf.get_properties("milvus.bge_m3_model_path")
+        milvus_url = f"http://{application_conf.get_properties("milvus.ip")}:{application_conf.get_properties("milvus.port")}"
 
         logger.info("Initializing RAG components...")
 
@@ -42,7 +44,7 @@ def get_rag_instance() -> MultiCallRagApi:
 
             # 初始化向量搜索器
             data_embedding_searcher = get_milvus_dataEmbeddingOrm(
-                local_tokenizer_model_path=local_model_path,
+                local_tokenizer_model_path=local_bge_m3_model_path,
                 milvus_url=milvus_url
             )
 

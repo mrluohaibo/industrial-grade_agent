@@ -1,5 +1,5 @@
 from typing import Union, Dict, List, Callable, Optional
-from save_embedding_to_milvus import MilvusAndEmbeddingClient
+from bz_agent.rag.save_embedding_to_milvus import MilvusAndEmbeddingClient
 from FlagEmbedding import BGEM3FlagModel
 
 # 获得向量数据库句柄

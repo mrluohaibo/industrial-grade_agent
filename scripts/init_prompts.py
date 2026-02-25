@@ -27,7 +27,7 @@ def main():
     logger.info("=" * 60)
 
     # 导入 prompts
-    count = import_prompts_to_mongo()
+    count = import_prompts_to_mongo("")
 
     logger.info("=" * 60)
     logger.info(f"Prompt import completed. Total imported: {count}")

@@ -25,7 +25,7 @@ td_engine:
   host: '192.168.99.108'
   port: 6030
   user: 'root'
-  password: 'Luohb123456'
+  password: '11111'
   database: 'stock_tick_info'
   timeout: 30
 
@@ -34,3 +34,14 @@ td_engine:
 ip_proxy:
     key: ''
     pwd: ''
+
+
+milvus:
+  ip: '192.168.99.108'
+  port: 19530
+  bge_m3_model_path: 'H:/large_data/modelscope_model/bge_m3'
+
+es:
+  host: 'http://192.168.99.108:9200'
+  u_name: 'buz_ac'
+  u_pwd: '123456'

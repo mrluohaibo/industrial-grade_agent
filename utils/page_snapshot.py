@@ -12,10 +12,10 @@ from selenium.webdriver.common.by import By
 import io
 import numpy as np
 
-from my_akshare.utils.qg_ip_proxy_tool import QingguoProxyIp
 from utils.logger_config import logger
 
 from bz_core.Constant import root_path
+from utils.qg_ip_proxy_tool import QingguoProxyIp
 from utils.random_util import RandomUtil
 
 

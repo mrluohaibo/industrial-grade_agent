@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional, Union, Tuple, Callable
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
 
-from app.logger import logger
+from utils.logger_config import logger
 
 
 class BM25Searcher:

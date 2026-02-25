@@ -1,14 +1,13 @@
 import asyncio
 from typing import Dict, Any, List
 
-from app.llm import LLM
-from app.rag.bm25_es_search import BM25Searcher
-from app.rag.embedding_data_handler import DataEmbeddingOrm, get_milvus_dataEmbeddingOrm
-from app.schema import ToolChoice, Memory, Message
-from embedding_data_handler import DataEmbeddingOrm
-from app.logger import logger
+from bz_agent.native_agent.llm import LLM
+from bz_agent.rag.bm25_es_search import BM25Searcher
+from bz_agent.rag.embedding_data_handler import DataEmbeddingOrm, get_milvus_dataEmbeddingOrm
+from bz_agent.native_agent.schema import ToolChoice, Memory, Message
+from utils.logger_config import logger
 from pydantic import Field
-
+from utils.config_init import application_conf
 
 class MultiCallRagApi:
 
@@ -162,9 +161,11 @@ async def run():
 
 
     # 指向你本地的模型目录
-    local_model_path = "H:/large_data/modelscope_model/bge_m3"
-    milvus_url = "http://192.168.99.108:19530"
-    dataEmbeddingOrm = get_milvus_dataEmbeddingOrm(local_tokenizer_model_path=local_model_path,milvus_url=milvus_url)
+    local_bge_m3_model_path = "H:/large_data/modelscope_model/bge_m3"
+
+    milvus_url = f"http://{application_conf.get_properties("milvus.ip")}:{application_conf.get_properties("milvus.port")}"
+
+    dataEmbeddingOrm = get_milvus_dataEmbeddingOrm(local_tokenizer_model_path=local_bge_m3_model_path,milvus_url=milvus_url)
 
 
     multiCallRagApi = MultiCallRagApi(bm25_searcher =bm25_searcher,data_embedding_searcher=dataEmbeddingOrm)

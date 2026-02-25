@@ -172,6 +172,7 @@ pbs-installer==2026.2.11
 peft==0.18.1
 pfzy==0.3.4
 pillow==12.1.1
+pip @ file:///home/task_177071101768311/croot/pip_1770711076895/work
 pkginfo==1.12.1.2
 platformdirs==4.9.2
 playwright==1.58.0
