@@ -1,0 +1,36 @@
+
+mysql:
+  host: '192.168.99.108'
+  port: 3306
+  user: 'root'
+  password: 'root'
+  database: 'stock_info'
+
+
+
+mongo:
+  host: '192.168.99.108'
+  port: 27017
+  db_name: 'stock_db'
+
+
+
+redis:
+  host: '192.168.99.108'
+  port: 6379
+  db: 0
+  password: ''
+
+td_engine:
+  host: '192.168.99.108'
+  port: 6030
+  user: 'root'
+  password: 'Luohb123456'
+  database: 'stock_tick_info'
+  timeout: 30
+
+
+
+ip_proxy:
+    key: ''
+    pwd: ''

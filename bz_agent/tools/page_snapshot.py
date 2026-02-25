@@ -1,0 +1,48 @@
+from browser_use.agent.views import AgentHistoryList
+from pydantic import BaseModel, Field
+from typing import Optional, ClassVar, Type
+from langchain.tools import BaseTool
+import asyncio
+from utils.page_snapshot import screenShot_tool
+
+
+class UrlInput(BaseModel):
+    """Input for WriteFileTool."""
+
+    url: str = Field(..., description="the url of the web page")
+
+
+class PageSnapshotTool(BaseTool):
+    name: ClassVar[str] = "pageSnapshot"
+    args_schema: Type[BaseModel] = UrlInput
+    description: ClassVar[str] = (
+        "Use this tool to capture snapshots of webpages. Input should be a web page url, such as 'http://yidian.weather.com.cn/mweather15d/101200805.shtml',Returns the path to a locally stored image"
+    )
+
+    async def do_snapshot(self, url) :
+        """Snapshot the web page."""
+        save_file_path = screenShot_tool.get_full_image(url)
+        return save_file_path
+
+    def _run(self, url: str) -> str:
+        """Run the browser task synchronously."""
+
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                result = loop.run_until_complete(self.do_snapshot(url))
+                return result
+            finally:
+                loop.close()
+        except Exception as e:
+            return f"Error executing browser task: {str(e)}"
+
+    async def _arun(self, url: str) -> str:
+        """Run the browser task asynchronously."""
+
+        try:
+            result = await self.do_snapshot(url)
+            return result
+        except Exception as e:
+            return f"Error executing browser task: {str(e)}"
