@@ -11,9 +11,12 @@ This is an industrial-grade multi-agent system built with LangGraph and LangChai
 **Multi-Agent System (`bz_agent/`):**
 - `bz_agent/graph/` - LangGraph-based workflow orchestration using StateGraph
 - `bz_agent/agents/` - Individual agent implementations (coder, browser, url_to_markdown, reporter)
-- `bz_agent/native_agent/` - Native agent framework with BaseAgent, ReActAgent classes
+- `bz_agent/native_agent/` - Native agent framework with BaseAgent, ReActAgent, MCPAgent classes
 - `bz_agent/prompts/` - Prompt templates in Markdown with custom template syntax (`<<VAR>>`)
-- `bz_agent/tools/` - Tool implementations (python_repl, browser, bash, file_management)
+- `bz_agent/tools/` - Tool implementations (python_repl, browser, bash, file_management, mcp, rag_tool)
+- `bz_agent/storage/` - MongoDB-based storage for conversations and prompts
+- `bz_agent/rag/` - RAG module with BM25 search, embedding, and Milvus vector storage
+- `bz_agent/mcp/` - Model Context Protocol server and HTTP transport implementations
 
 **Agent Types and LLM Configuration:**
 - Agent-LLM mapping in `bz_agent/config/agents_map.py`
@@ -30,12 +33,85 @@ The main workflow (defined in `bz_agent/graph/builder.py`) follows this flow:
 
 State is managed via `bz_agent/graph/types.py` which extends `MessagesState` with `TEAM_MEMBERS`, `next`, `full_plan`, `deep_thinking_mode`, `search_before_planning`.
 
+**Session Context Management:**
+- Workflows use `context_middleware` for pre/post-processing
+- Pre-process: Loads conversation history from MongoDB if `session_id` provided
+- Post-process: Saves messages to MongoDB
+- New sessions are auto-generated if no `session_id` provided
+
 ### Native Agent Framework
 
 `bz_agent/native_agent/` provides a custom agent implementation:
 - `BaseAgent` - Abstract base with state management, memory, and execution loop
 - `ReActAgent` - Think-act pattern implementation
+- `MCPAgent` - Model Context Protocol client for connecting to MCP servers
 - `schema.py` - Defines Message, Memory, AgentState, ToolCall, Role types
+
+### MCP (Model Context Protocol)
+
+**MCP Client (`bz_agent/native_agent/mcp.py`):**
+- `MCPAgent` connects to MCP servers via SSE or stdio transport
+- Automatically discovers and refreshes tools from connected servers
+- Supports multiple concurrent MCP server connections
+- Tools are prefixed with `mcp_{server_id}_{tool_name}`
+
+**MCP Tools (`bz_agent/tools/mcp.py`):**
+- `MCPClients` - Collection class for managing multiple MCP server connections
+- `MCPClientTool` - Proxy tool that calls remote MCP server tools
+- Supports SSE and stdio transports
+
+**MCP Server (`bz_agent/mcp/server.py`):**
+- FastMCP-based server using FastMCP framework
+- Registers tools with automatic parameter validation and docstring generation
+- Standard tools: bash, browser, editor, terminate
+
+**Running MCP Agent:**
+```bash
+# Run MCP client with stdio connection
+python -m bz_agent.run_mcp --connection stdio
+
+# Run MCP client with SSE connection
+python -m bz_agent.run_mcp --connection sse --server-url http://127.0.0.1:8000/sse
+
+# Interactive mode
+python -m bz_agent.run_mcp -i
+
+# Single prompt
+python -m bz_agent.run_mcp -p "your prompt here"
+```
+
+### RAG Module (`bz_agent/rag/`)
+
+- `bm25_es_search.py` - BM25 search using Elasticsearch with IK tokenizer for Chinese
+- `embedding_data_handler.py` - Text embedding with BGE-M3 model
+- `save_embedding_to_milvus.py` - Vector storage in Milvus database
+- `split_data_handler.py` - Document chunking and splitting for RAG
+- `multi_call_rag_api.py` - Multi-call RAG API integration
+
+**RAG Configuration (from `config/application.yaml`):**
+- Milvus: IP, port, BGE-M3 model path
+- Elasticsearch: host, username, password for BM25 search
+
+### Storage Layer (`bz_agent/storage/`)
+
+MongoDB-backed storage for conversation and prompt management:
+
+**ConversationStore (`conversation_store.py`):**
+- Stores conversation history with session_id
+- Automatic message trimming (max 1000 messages per session)
+- Methods: `create_session()`, `add_message()`, `get_messages()`, `close_session()`, `delete_session()`
+- Indexes on: session_id (unique), user_id, updated_at
+
+**PromptStore (`prompt_store.py`):**
+- Versioned prompt templates in MongoDB
+- Methods: `save_prompt()`, `get_prompt()`, `update_prompt()`, `activate_prompt()`
+- Import from files: `import_from_file()`, `import_all_from_directory()`
+- Indexes on: prompt_name, active, updated_at
+
+**ContextMiddleware (`context_middleware.py`):**
+- Integrates storage with workflow execution
+- `pre_process(state)` - Loads conversation history if session_id exists
+- `post_process(state)` - Saves messages to MongoDB after execution
 
 ### Database Layer
 
@@ -72,8 +148,51 @@ pre-commit install
 # Run main agent workflow
 python main.py
 
+# Run agent workflow programmatically (from Python)
+from bz_agent.workflow import run_agent_workflow
+result = run_agent_workflow("your query here", session_id="optional-session-id")
+
 # Run url to markdown conversion
 python -m bz_agent.workflow
+
+# Extract webpage content to markdown
+from bz_agent.workflow import request_url_content_to_markdown
+content = request_url_content_to_markdown("https://example.com")
+```
+
+**MCP Agent:**
+```bash
+# Run MCP client with stdio connection (default)
+python -m bz_agent.run_mcp
+
+# Run MCP client with SSE connection
+python -m bz_agent.run_mcp --connection sse --server-url http://127.0.0.1:8000/sse
+
+# Interactive mode
+python -m bz_agent.run_mcp -i
+
+# Single prompt
+python -m bz_agent.run_mcp -p "your prompt here"
+```
+
+**Prompt Management:**
+```bash
+# Import all prompt files to MongoDB
+python -m scripts.init_prompts
+
+# Import prompts programmatically
+from bz_agent.prompts.template import import_prompts_to_mongo
+count = import_prompts_to_mongo()
+
+# Reload prompt cache (no-op in current implementation)
+from bz_agent.prompts.template import reload_prompt_cache
+reload_prompt_cache()
+```
+
+**Playwright Setup:**
+```bash
+# Install Playwright browsers (required for browser agent tools)
+playwright install
 ```
 
 **Dependencies:**
@@ -91,10 +210,14 @@ pip install -r requirements-dev.txt
 - Located in `bz_agent/prompts/*.md`
 - Use `<<VAR>>` syntax for variables (converted to `{VAR}` by `template.py`)
 - Current time is automatically injected via `CURRENT_TIME` variable
+- **Prompt Source Configuration** (via `PROMPT_SOURCE` env var or `config/application.yaml`):
+  - `"file"` - Load only from markdown files (default)
+  - `"mongo"` - Load only from MongoDB
+  - `"mongo_fallback"` - Try MongoDB first, fallback to files (recommended for production)
 
 **Tool Creation:**
-- Tools are LangChain `BaseTool` subclasses in `bz_agent/tools/`
-- Use `@tool` decorator from `langchain_core.tools`
+- LangChain tools: Subclass `BaseTool` in `bz_agent/tools/`, use `@tool` decorator
+- Native tools: Subclass `BaseTool` from `bz_agent/native_agent/tools/base.py`
 - Apply `@log_io` decorator from `tools/decorators.py` for logging
 
 **Adding New Agents:**
@@ -104,12 +227,17 @@ pip install -r requirements-dev.txt
 4. Create node function in `bz_agent/graph/nodes.py`
 5. Add node and edges to `build_graph()` in `bz_agent/graph/builder.py`
 
+**Adding MCP Tools:**
+1. Connect to MCP server using `MCPAgent` or `MCPClients`
+2. Tools are auto-discovered and prefixed with `mcp_{server_id}_{tool_name}`
+3. Use `await mcp_clients.call_tool(tool_name, kwargs)` to execute
+
 **Database Transactions:**
 - MySQL client uses `autocommit_default=False`
 - Use explicit transaction handling with `commit()`/`rollback()`
 
 **Configuration:**
-- Application config: `config/application.yaml` (databases, proxy settings)
+- Application config: `config/application.yaml` (databases, proxy, prompt, session, milvus, es)
 - LLM config: `config/llm.env` (API keys, model names, base URLs)
 - Access via `utils.config_init.application_conf.get_properties("path.to.key")`
 
