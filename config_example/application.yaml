@@ -40,6 +40,7 @@ milvus:
   ip: '192.168.99.108'
   port: 19530
   bge_m3_model_path: 'H:/large_data/modelscope_model/bge_m3'
+  bge_reranker_path: 'model/bge-reranker-large'  # BGE-Reranker 重排序模型路径
 
 es:
   host: 'http://192.168.99.108:9200'
