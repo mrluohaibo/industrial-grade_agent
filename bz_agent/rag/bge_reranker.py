@@ -39,7 +39,6 @@ class BGEReranker:
                 use_fp16=True,
                 device=self.device
             )
-            self.model.eval()
             logger.info(f"BGE-Reranker loaded successfully, dimension: {self.model.model.config.hidden_size}")
         except Exception as e:
             logger.error(f"Failed to load BGE-Reranker: {e}")

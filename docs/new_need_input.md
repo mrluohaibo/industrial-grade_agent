@@ -5,3 +5,6 @@
 
 将bz_agent/rag/multi_call_rag_api.py文件中的rrf方法改造成基于bge-reranker-base/large模型的重排序实现，bge-reranker-base/large这模型下载到
 model目录下，先制定执行计划，我看看是否合理，先不执行代码变更，ultra think
+
+> pip install modelscope
+> modelscope download --model BAAI/bge-reranker-base  --local_dir ./model/bge-reranker-large
