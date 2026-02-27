@@ -1,0 +1,229 @@
+version: '3'
+services:
+  zookeeper:
+    restart: "always"
+    image: zookeeper:3.7.0
+    container_name: zookeeper
+    volumes:
+      - /www/docker-work/zookeeper/data:/data
+      - /www/docker-work/zookeeper/datalog:/datalog
+    ports:
+      - "2181" 
+    networks:
+      - "inner-net"
+  kafka1:
+    image: wurstmeister/kafka
+    container_name: kafka1
+    restart: "always"
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    depends_on:
+      - zookeeper
+    environment:
+      TZ: Asia/Shanghai
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LOG_DIRS: /kafka/kafkaLog
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms512m"
+      KAFKA_ADVERTISED_LISTENERS: PRIVATE://kafka1:9092,PUBLIC://192.168.1.181:9093
+      KAFKA_LISTENERS: PRIVATE://0.0.0.0:9092,PUBLIC://0.0.0.0:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PRIVATE:PLAINTEXT,PUBLIC:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PRIVATE
+      KAFKA_BROKER_ID: 1
+    volumes:
+      - /www/docker-work/kafka:/kafka
+      - /etc/localtime:/etc/localtime
+    networks:
+       - "inner-net"
+  mysql:
+    restart: always
+    image: mysql:5.7
+    container_name: dockermysql
+    ports:
+      - 3306:3306
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: soonnote#1990
+    command:
+      --character-set-server=utf8
+      --collation-server=utf8_bin
+      --explicit_defaults_for_timestamp=true
+      --max_allowed_packet=128M
+      --sql-mode="STRICT_TRANS_TABLES,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO"
+    volumes:
+      - /www/docker-work/mysql:/var/lib/mysql
+      - /etc/localtime:/etc/localtime
+    networks:
+      - "inner-net"
+     
+  
+
+  redis:
+    image: redis:6.0.8
+    restart: always
+    container_name: redis
+    volumes: 
+      - /www/docker-work/redis/data:/data
+      - /www/docker-work/redis/conf:/etc/redis/conf
+    command: redis-server /etc/redis/conf/redis.conf  
+    ports:
+      - "6379:6379"
+    networks:
+      - "inner-net"    
+       
+
+      
+      
+  mongo:
+    image: mongo        
+    restart: always
+    container_name: mongo
+    volumes: 
+      - /www/docker-work/mongo/data:/data/db 
+    ports:
+      - "27017:27017"
+    environment:
+      TZ: Asia/Shanghai
+    networks:
+      - "inner-net"
+      
+  httpbin:
+    image: kennethreitz/httpbin
+    restart: always
+    container_name: httpbin
+    ports:
+      - "6380:80"
+ 
+
+  vsftpd:
+    image: "fauria/vsftpd"
+    volumes:
+      - /www/docker-work/ftp:/home/ftp
+      - /www/docker-work/ftp/log/:/var/log/
+    container_name: vsftpd
+    ports:
+      - "6898:21"
+      - "6891-6897:6891-6897"
+    environment:
+      # 需要服务器对外的公网IP
+      - PASV_ADDRESS=192.168.1.181
+      - FTP_USER=tftp
+      - FTP_PASS=soonnote_vsftpd
+      - FTP_USER_HOME=/home/ftp
+      - PASV_ENABL=YES
+      - PASV_MIN_PORT=6891
+      - PASV_MAX_PORT=6897
+      
+  etcd:
+    container_name: milvus-etcd
+    image: quay.io/coreos/etcd:v3.5.5
+    restart: always
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/etcd:/etcd
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - "inner-net"
+
+  minio:
+    container_name: milvus-minio
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    restart: always
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    ports:
+      - "9001:9001"
+      - "9000:9000"
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/minio:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - "inner-net"
+
+  standalone:
+    container_name: milvus-standalone
+    image: milvusdb/milvus:v2.4.15
+    restart: always
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+    - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MILVUS_MEMORY_LIMIT: 4G
+      MILVUS_CPU_LIMIT: 2
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/milvus_new:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      start_period: 90s
+      timeout: 20s
+      retries: 3
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    depends_on:
+      - "etcd"
+      - "minio"
+    networks:
+      - "inner-net"
+      
+  elasticsearch:
+    container_name: es01
+    image: elasticsearch:8.12.2
+    restart: always
+    environment:
+      - "TZ=Asia/Shanghai"
+      - "cluster.name=elasticsearch" #设置集群名称为elasticsearch
+      - "discovery.type=single-node" # 单节点
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g" # 内存限制(按需配置)
+      - "ELASTIC_PASSWORD=123456" # 密码(需要调用接口鉴权的时候配置)  用户名:elastic 密码:123456
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/es/data:/usr/share/elasticsearch/data:rw
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/es/logs:/usr/share/elasticsearch/logs:rw # 日志
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/es/plugins:/usr/share/elasticsearch/plugins
+    networks:
+      - "inner-net"
+      
+      
+  kibana:
+    container_name: kibana01
+    image: kibana:8.12.2
+    restart: always
+    environment:
+      - "TZ=Asia/Shanghai"
+      - "I18N_LOCALE=zh-CN"
+      - "ELASTICSEARCH_HOSTS=http://elasticsearch:9200"
+      - "ELASTICSEARCH_USERNAME=kibana"
+      - "ELASTICSEARCH_PASSWORD=123456"
+    ports:
+      - "5601:5601"
+    networks:
+      - "inner-net"
+    depends_on:
+      - elasticsearch
+
+
+networks:
+    inner-net:
+        driver: bridge

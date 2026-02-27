@@ -1,8 +1,10 @@
 import time
 
 from langchain_community.vectorstores import Milvus
-from pymilvus import MilvusClient, CollectionSchema, DataType
+from pymilvus import MilvusClient, CollectionSchema, DataType, MilvusException
 from typing import List, Union, Dict, Optional
+
+from bz_core.thread_pool_define import handle_daily_stock_data_pool
 from utils.logger_config import logger
 
 
@@ -30,13 +32,40 @@ class MilvusAndEmbeddingClient:
 
 
     def is_collection_loaded(self, collection_name: str):
-        """内部函数：检查集合是否已加载"""
-        stats = self.client.get_collection_stats(collection_name=collection_name)
+        """
+            内部函数：检查集合是否已加载
+            beload,need_manual_load return
+        """
+        stats = self.client.get_load_state(collection_name=collection_name)
         # 从统计信息中提取加载状态（关键字段：loaded_percent）
         # loaded_percent=100 表示完全加载，0 表示未加载
-        loaded_percent = stats.get("loaded_percent", 0)
-        return loaded_percent == 100
+        # NotExist = 0
+        # NotLoad = 1
+        # Loading = 2
+        # Loaded = 3
+        state = stats.get("state")
+        from pymilvus.client.types import LoadState
+        if state == LoadState.Loaded:
+            return True,False
+        elif state == LoadState.Loading:
+            progress = stats.get("progress", 0)
+            logger.info(f"collection {collection_name} load progress: {progress}")
+            return False,False
+        elif state == LoadState.NotLoad:
+            return False,True
+        elif state == LoadState.NotExist:
+            raise Exception(f"集合 {collection_name} 不存在")
 
+    def async_load_collection( self,collection_name: str):
+        """
+        异步执行加载集合的函数（交给线程池执行）
+        """
+        try:
+            # 执行加载操作（该方法本身是阻塞的，交给线程池后主线程不阻塞）
+            self.client.load_collection(collection_name=collection_name,timeout=60)
+            return True, "加载成功"
+        except MilvusException as e:
+            return False, f"加载失败: {str(e)}"
 
 
     # 3. 检查并加载集合
@@ -51,26 +80,29 @@ class MilvusAndEmbeddingClient:
         if not self.client.has_collection(collection_name):
             raise Exception(f"集合 {collection_name} 不存在")
 
+        stats = self.client.get_collection_stats(collection_name)
+        if stats['row_count'] == 0:
+            logger.warning(f"Collection '{collection_name}' is empty, need to import data")
+            return
+
         check_interval: int = 2
         # 检查集合加载状态
-        if not self.is_collection_loaded(collection_name):
-            logger.info(f"集合 {collection_name} 未加载，开始加载...")
-            # 加载集合（可指定加载的副本数，默认全部）
-            self.client.load_collection(
-                collection_name=collection_name,
-               # replica_number=1,  # 集群版可指定多副本，单机版忽略
-                timeout=timeout
-            )
+        beload,need_manual_load = self.is_collection_loaded(collection_name)
 
+        if not beload:
+            logger.info(f"集合 {collection_name} 未加载，开始加载...")
+            if need_manual_load:
+                handle_daily_stock_data_pool.add_task(self.async_load_collection,collection_name)
             # 等待加载完成（轮询检查状态）
             start_time = time.time()
-            while time.time() - start_time < timeout:
-                if self.is_collection_loaded(collection_name):
+            while True:
+                beload, need_manual_load = self.is_collection_loaded(collection_name)
+                if beload:
                     logger.info(f"集合 {collection_name} 加载完成（耗时 {int(time.time() - start_time)} 秒）")
                     return True
                 time.sleep(check_interval)
-
-            raise TimeoutError(f"集合 {collection_name} 加载超时（{timeout} 秒）")
+        else:
+            logger.info(f"集合 {collection_name} 已经加载")
 
     def check_and_create_collection(self,collection_name: str):
 
@@ -190,7 +222,26 @@ class MilvusAndEmbeddingClient:
         res_dict = self.client.delete(collection_name=table_name,ids=ids,filter=filter)
         return res_dict
 
+    def emptyCollection(self, collection_name):
+        try:
+            # 3. 检查 collection 是否存在
+            if self.client.has_collection(collection_name=collection_name):
+                # 4. 删除 collection 中的所有数据（保留结构）
+                # 使用 delete 方法，expr 设置为 "id >= 0" 匹配所有数据
+                self.client.delete(
+                    collection_name=collection_name,
+                    filter="id >= 0"
+                )
+                logger.info(f"✅ 成功清空 collection: {collection_name}")
 
+                # 可选：验证清空结果（查询数据量）
+                stats = self.client.get_collection_stats(collection_name=collection_name)
+                logger.info(f"📊 清空后数据量: {stats['row_count']}")
+            else:
+                logger.info(f"❌ collection {collection_name} 不存在")
+
+        except Exception as e:
+            logger.info(f"❌ 清空 collection 失败: {str(e)}")
 
 
 if __name__ == "__main__":

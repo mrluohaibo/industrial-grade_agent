@@ -6,6 +6,7 @@ from pymilvus import FieldSchema, DataType, CollectionSchema
 from embedding_data_handler import DataEmbeddingOrm
 from save_embedding_to_milvus import MilvusAndEmbeddingClient
 from FlagEmbedding import BGEM3FlagModel
+from utils.snow_flake import snowflake
 
 
 def q_content_schema():
@@ -69,7 +70,7 @@ if __name__ == '__main__':
     milvus_url = "http://192.168.99.108:19530"
 
     milvusAndEmbeddingClient = MilvusAndEmbeddingClient(milvus_url = milvus_url)
-
+    # milvusAndEmbeddingClient.client.drop_collection(collection_name="q_content")
     if init_table is not None:
         temp = [milvusAndEmbeddingClient.check_and_init_table(table_name, embedding_dim, table_schema[table_name]) for table_name in init_table]
 
@@ -77,6 +78,7 @@ if __name__ == '__main__':
 
 
     # 初始化保存
+    count = 0
     # with open("H:/large_data/QA_dataset/cmrc2018_train.json",mode="r",encoding="utf-8") as f:
     #     all_content = f.read()
     #     json_content = json.loads(all_content)
@@ -90,7 +92,8 @@ if __name__ == '__main__':
     #         data["origin_content"] = context
     #         data["id"] = snowflake.generate_id()
     #         result_orm = dataEmbeddingOrm.save_split_data("q_content",data)
-    #         print("after save res is ",result_orm)
+    #         print(f"after save res is {result_orm} count is {count}")
+    #         count = count + 1
 
 
 
