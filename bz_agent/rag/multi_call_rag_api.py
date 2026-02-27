@@ -177,15 +177,7 @@ class MultiCallRagApi:
             doc_id_list_reranked = self.rerank(query, all_candidates, top_k=top_k)
 
             # 构建最终结果列表（按照重排序顺序）
-            vec_result_dict ={ item["document_id"]:item for item in vec_result}
-            es_results_dict ={ item["document_id"]:item for item in es_results}
-
-            if len(doc_id_list_reranked) > 0:
-                for doc_id in doc_id_list_reranked:
-                    if doc_id in vec_result_dict:
-                        last_res_list.append(vec_result_dict[doc_id])
-                    else:
-                        last_res_list.append(es_results_dict[doc_id])
+            last_res_list = doc_id_list_reranked
 
         elif len(es_results) > 0:
             last_res_list = es_results
