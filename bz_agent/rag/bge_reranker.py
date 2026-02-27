@@ -39,7 +39,7 @@ class BGEReranker:
                 use_fp16=True,
                 device=self.device
             )
-            logger.info(f"BGE-Reranker loaded successfully, dimension: {self.model.model.config.hidden_size}")
+            logger.info(f"BGE-Reranker loaded successfully")
         except Exception as e:
             logger.error(f"Failed to load BGE-Reranker: {e}")
             raise
@@ -56,7 +56,7 @@ class BGEReranker:
         Args:
             query: 用户查询
             passages: [{"id": doc_id, "text": content}]
-            top_k: 返回前 k 个结果
+            top_k: 返回前 k 个
 
         Returns:
             [{"id": doc_id, "score": score}]，按 score 降序
@@ -78,7 +78,8 @@ class BGEReranker:
         # 2. 编码 passages
         passage_texts = [p["text"] for p in passages]
         try:
-            passage_embs = self.model.encode_passages(
+            # FlagEmbedding 使用 encode 方法，传入 passages 列表
+            passage_embs = self.model.encode(
                 passage_texts,
                 return_dense=True
             )["dense_vecs"]  # [N, 1024]
