@@ -156,8 +156,8 @@ services:
       - "inner-net"
 
   standalone:
-    container_name: milvus-standalone
-    image: milvusdb/milvus:v2.4.15
+    container_name: milvus-standalone-new
+    image: milvusdb/milvus:v2.4.24
     restart: always
     command: ["milvus", "run", "standalone"]
     security_opt:
@@ -165,8 +165,7 @@ services:
     environment:
       ETCD_ENDPOINTS: etcd:2379
       MINIO_ADDRESS: minio:9000
-      MILVUS_MEMORY_LIMIT: 4G
-      MILVUS_CPU_LIMIT: 2
+      MILVUS_MEMORY_LIMIT: 2G
     volumes:
       - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/milvus_new:/var/lib/milvus
     healthcheck:
@@ -214,7 +213,7 @@ services:
       - "TZ=Asia/Shanghai"
       - "I18N_LOCALE=zh-CN"
       - "ELASTICSEARCH_HOSTS=http://elasticsearch:9200"
-      - "ELASTICSEARCH_USERNAME=kibana"
+      - "ELASTICSEARCH_USERNAME=test"
       - "ELASTICSEARCH_PASSWORD=123456"
     ports:
       - "5601:5601"
@@ -222,6 +221,27 @@ services:
       - "inner-net"
     depends_on:
       - elasticsearch
+
+
+  tdengine:
+    image: tdengine/tdengine:3.3.6.0
+    container_name: tdengine
+    restart: always
+    ports:
+      - "6030:6030"   # RESTful API 端口
+      - "6041:6041"   # taosAdapter HTTP 端口（新版）
+      - "6035:6035"   # Arbitrator 端口（可选）
+      - "6040:6040"   # 内部通信端口（可选）
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/taos/data:/var/lib/taos
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/taos/log:/var/log/taos
+      # 可选：挂载自定义配置
+      # - ./taos.cfg:/etc/taos/taos.cfg
+    environment:
+      - TAOS_FQDN=tdengine
+      - TAOS_FIRST_EP=tdengine
+    networks:
+       - "inner-net"
 
 
 networks:
