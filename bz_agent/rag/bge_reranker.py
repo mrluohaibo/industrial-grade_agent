@@ -3,8 +3,8 @@ BGE-Reranker 重排序实现
 
 使用 BAAI/bge-reranker-large 模型对 RAG 检索结果进行重排序
 """
-from typing import List, Dict
 import torch
+from typing import List, Dict
 
 from FlagEmbedding import BGEM3FlagModel
 from utils.logger_config import logger
@@ -30,7 +30,7 @@ class BGEReranker:
         else:
             self.device = device
 
-        logger.info(f"Loading BGE-Reranker from: {model_path} on device: {self.device}")
+        logger.info(f"Loading BGE-Reranker from {model_path} on device: {self.device}")
 
         try:
             # 加载模型，使用 FP16 加速
@@ -67,10 +67,13 @@ class BGEReranker:
 
         # 1. 编码 query
         try:
-            query_emb = self.model.encode_queries(
+            query_emb_dict = self.model.encode_queries(
                 [query],
                 return_dense=True
-            )["dense_vecs"][0]  # [1024]
+            )
+            # 转换为 PyTorch tensor 以使用 unsqueeze
+            import torch
+            query_emb = torch.from_numpy(query_emb_dict["dense_vecs"][0])
         except Exception as e:
             logger.error(f"Failed to encode query: {e}")
             return []
@@ -79,10 +82,12 @@ class BGEReranker:
         passage_texts = [p["text"] for p in passages]
         try:
             # FlagEmbedding 使用 encode 方法，传入 passages 列表
-            passage_embs = self.model.encode(
+            passage_embs_dict = self.model.encode(
                 passage_texts,
                 return_dense=True
-            )["dense_vecs"]  # [N, 1024]
+            )
+            # 转换为 PyTorch tensor
+            passage_embs = torch.from_numpy(passage_embs_dict["dense_vecs"])
         except Exception as e:
             logger.error(f"Failed to encode passages: {e}")
             return []
