@@ -78,3 +78,4 @@ class DataEmbeddingOrm:
         save_data["vector"] = self.embeddings_encode([content])[0].tolist()
         return save_data
 
+
