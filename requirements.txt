@@ -21,6 +21,7 @@ boto3==1.42.56
 botocore==1.42.56
 brotli==1.2.0
 browser-use==0.1.24
+fastapi==0.115.0
 browser-use-sdk==2.0.15
 bubus==1.5.6
 build==1.4.0
@@ -198,6 +199,7 @@ PyJWT==2.11.0
 pymilvus==2.6.5
 pymongo==4.16.0
 pymongo-amplidata==3.6.0.post1
+pymupdf==1.24.0
 pyotp==2.9.0
 pyparsing==3.3.2
 pypdf==6.7.3
@@ -268,10 +270,11 @@ tzdata==2025.3
 tzlocal==5.3.1
 unlzw3==0.2.3
 uritemplate==4.2.0
+markdown==3.7
 urllib3==2.6.3
 uuid7==0.1.0
 uuid_utils==0.14.1
-uvicorn==0.41.0
+uvicorn[standard]==0.32.0
 virtualenv==20.39.0
 warc3-wet==0.2.5
 warc3-wet-clueweb09==0.2.5

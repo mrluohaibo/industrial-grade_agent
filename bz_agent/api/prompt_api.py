@@ -33,7 +33,7 @@ class PromptUpdate(BaseModel):
 
 class PromptResponse(BaseModel):
     """Prompt 响应模型"""
-    _id: str = Field(..., description="文档 ID")
+    id: str = Field(..., description="文档 ID")
     prompt_name: str = Field(..., description="Prompt 名称")
     template: str = Field(..., description="模板内容")
     description: str = Field(..., description="描述")

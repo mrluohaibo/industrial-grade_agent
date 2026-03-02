@@ -15,7 +15,7 @@
 ## 架构
 
 ```
-industrial-grade_agent scaffolding/
+industrial-grade_agent_scaffolding/
 ├── bz_agent/                 # 核心智能体框架
 │   ├── agents/              # 智能体实现
 │   ├── config/              # 配置和 LLM 映射
