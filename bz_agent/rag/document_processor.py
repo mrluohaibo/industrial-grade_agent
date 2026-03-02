@@ -164,45 +164,55 @@ class DocumentProcessor:
 
     def _ensure_collection_exists(self):
         """Ensure Milvus collection exists, create if not."""
-        if not utility.has_collection(self.COLLECTION_NAME):
-            # Create collection schema
-            from pymilvus import CollectionSchema, DataType, FieldSchema
-
-            id_field = FieldSchema(
-                name="id",
-                dtype=DataType.INT64,
-                is_primary=True,
-                auto_id=False,
+        try:
+            # Check if collection exists using the client directly
+            has_collection = self._milvus_client.client.has_collection(
+                collection_name=self.COLLECTION_NAME
             )
 
-            document_id_field = FieldSchema(
-                name="document_id",
-                dtype=DataType.VARCHAR,
-                max_length=128,
-            )
+            if not has_collection:
+                # Create collection schema
+                from pymilvus import CollectionSchema, DataType, FieldSchema
 
-            content_field = FieldSchema(
-                name="origin_content",
-                dtype=DataType.VARCHAR,
-                max_length=65535,
-            )
+                id_field = FieldSchema(
+                    name="id",
+                    dtype=DataType.INT64,
+                    is_primary=True,
+                    auto_id=False,
+                )
 
-            embedding_dim = 1024  # BGE-M3 dimension
-            vector_field = FieldSchema(
-                name="vector",
-                dtype=DataType.FLOAT_VECTOR,
-                dim=embedding_dim,
-            )
+                document_id_field = FieldSchema(
+                    name="document_id",
+                    dtype=DataType.VARCHAR,
+                    max_length=128,
+                )
 
-            schema = CollectionSchema(
-                fields=[id_field, document_id_field, content_field, vector_field],
-                description="RAG chunks collection",
-            )
+                content_field = FieldSchema(
+                    name="origin_content",
+                    dtype=DataType.VARCHAR,
+                    max_length=65535,
+                )
 
-            self._milvus_client.client.create_collection(
-                collection_name=self.COLLECTION_NAME, schema=schema
-            )
-            logger.info(f"Created Milvus collection: {self.COLLECTION_NAME}")
+                embedding_dim = 1024  # BGE-M3 dimension
+                vector_field = FieldSchema(
+                    name="vector",
+                    dtype=DataType.FLOAT_VECTOR,
+                    dim=embedding_dim,
+                )
+
+                schema = CollectionSchema(
+                    fields=[id_field, document_id_field, content_field, vector_field],
+                    description="RAG chunks collection",
+                )
+
+                self._milvus_client.client.create_collection(
+                    collection_name=self.COLLECTION_NAME, schema=schema
+                )
+                logger.info(f"Created Milvus collection: {self.COLLECTION_NAME}")
+
+        except Exception as e:
+            logger.warning(f"Failed to check/create Milvus collection: {e}")
+            # Continue anyway, collection might already exist
 
     def process_document(
         self,
