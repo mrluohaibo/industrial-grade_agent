@@ -55,6 +55,21 @@ def setup_logger(name, log_file, level=logging.INFO):
     return logger
 
 
+def get_logger(name: str = None):
+    """
+    Get or create a logger with the given name.
+
+    Args:
+        name: Logger name. If None, returns the default 'stock_info_app' logger.
+
+    Returns:
+        Logger instance
+    """
+    if name is None:
+        return logger
+    return setup_logger(name, os.path.join(root_path, 'logs/app.log'), level=logging.INFO)
+
+
 # 确保日志目录存在
 log_dir = os.path.join(root_path, 'logs')  # log_path为存放日志的路径
 os.makedirs(log_dir, exist_ok=True)

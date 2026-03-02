@@ -1,0 +1,289 @@
+{
+  "project": "RAG 文档处理系统",
+  "description": "企业级 RAG 文档上传、切分、语义精炼、向量化与存储流程",
+  "tasks": [
+    {
+      "id": 1,
+      "title": "配置文件更新",
+      "description": "更新依赖和配置文件，为项目添加必要的支持",
+      "steps": [
+        "在 requirements.txt 中添加 FastAPI 相关依赖: fastapi==0.115.0, uvicorn[standard]==0.32.0, python-multipart==0.0.20",
+        "在 requirements.txt 中添加文档解析依赖: python-docx==1.1.3, pymupdf==1.24.0, markdown==3.7",
+        "在 config/application.yaml 中添加文档存储配置: document.storage_path, document.max_file_size, document.allowed_extensions",
+        "在 config/application.yaml 中添加语义精炼配置: semantic_refinement.enabled, semantic_refinement.llm_model, semantic_refinement.max_keywords",
+        "在 config/application.yaml 中添加 API 配置: api.host, api.port, api.debug",
+        "创建 data/documents 目录用于存储原始文件"
+      ],
+      "passes": true
+    },
+    {
+      "id": 2,
+      "title": "数据模型定义",
+      "description": "创建数据模型类，定义文档处理过程中的数据结构",
+      "steps": [
+        "创建 bz_agent/rag/models.py 文件",
+        "定义 ChunkInfo 类: document_id, chunk_id, chunk_index, original_content, metadata",
+        "定义 RefinementResult 类: chunk_id, refined_summary, keywords, entities",
+        "定义 ChunkDocument 类: 整合 ChunkInfo 和 RefinementResult，添加 embedding 字段",
+        "定义 DocumentProcessResult 类: document_id, filename, chunk_count, status, chunks, errors",
+        "定义 DocumentInfo 类: document_id, filename, upload_time, chunk_count",
+        "定义 SearchResult 类: query, results (包含 document_id, chunk_id, content, refined_summary, score, metadata)",
+        "添加所有模型的类型注解和 Pydantic BaseModel 验证（用于 API）"
+      ],
+      "passes": true
+    },
+    {
+      "id": 3,
+      "title": "文件解析器实现",
+      "description": "实现支持 Word、PDF、Markdown 格式的文件解析器",
+      "steps": [
+        "创建 bz_agent/rag/file_parser.py 文件",
+        "创建 FileParser 类，提供 parse_file() 接口方法",
+        "实现 Word 解析器: 使用 python-docx 读取 .docx 文件，提取段落文本",
+        "实现 PDF 解析器: 使用 pymupdf 读取 .pdf 文件，提取页面文本，处理分页",
+        "实现 Markdown 解析器: 读取 .md 文件，提取文本，可选提取标题层级信息",
+        "实现纯文本解析器: 读取 .txt 文件",
+        "实现文件类型检测: 根据文件扩展名自动选择解析器",
+        "添加错误处理: 文件不存在、格式不支持、解析失败等情况",
+        "添加单元测试: 测试各种文件格式的解析功能"
+      ],
+      "passes": true
+    },
+    {
+      "id": 4,
+      "title": "语义精炼器实现",
+      "description": "实现基于 LLM 的语义摘要和关键词提取功能",
+      "steps": [
+        "创建 bz_agent/rag/semantic_refiner.py 文件",
+        "创建 SemanticRefiner 类，初始化时加载 LLM 配置",
+        "设计精炼 Prompt 模板: 要求 LLM 返回 JSON 格式（summary, keywords, entities）",
+        "实现 refine_chunk() 方法: 接收 chunk 文本，调用 LLM 生成精炼结果",
+        "实现批量精炼: refine_chunks() 支持并发处理多个 chunk",
+        "添加结果解析: 从 LLM 响应中提取 summary, keywords, entities",
+        "添加错误处理: LLM 调用失败、解析失败等异常处理",
+        "实现降级策略: 当精炼失败时返回原始内容作为 summary",
+        "添加缓存机制: 避免重复精炼相同内容（可选）",
+        "添加日志记录: 记录精炼耗时、token 消耗等指标"
+      ],
+      "passes": true
+    },
+    {
+      "id": 5,
+      "title": "文档处理器实现 (P0 核心)",
+      "description": "实现文档处理的核心流程编排，整合所有组件",
+      "steps": [
+        "创建 bz_agent/rag/document_processor.py 文件",
+        "创建 DocumentProcessingService 类，初始化时加载所有依赖",
+        "实现 process_document() 方法: 主流程入口",
+        "步骤1: 验证文件，生成 document_id（使用现有 snowflake）",
+        "步骤2: 保存原始文件到 document.storage_path",
+        "步骤3: 调用 FileParser 解析文件内容",
+        "步骤4: 调用 DocumentSplitter 切分文档，生成 chunks",
+        "步骤5: 为每个 chunk 生成唯一 chunk_id",
+        "步骤6: 调用 SemanticRefiner 精炼每个 chunk（如果启用）",
+        "步骤7: 组装 ChunkDocument 数据结构",
+        "步骤8: 调用 embedding 模型生成向量",
+        "步骤9: 双写存储: Milvus（向量）和 Elasticsearch（结构化）",
+        "步骤10: 返回 DocumentProcessResult",
+        "实现 delete_document() 方法: 删除文档及其所有 chunks",
+        "实现 get_document_info() 方法: 获取文档信息",
+        "实现 get_document_chunks() 方法: 获取文档的所有 chunks",
+        "添加事务处理: Milvus 和 ES 双写的原子性保证",
+        "添加错误处理: 部分失败时的回滚策略",
+        "添加进度回调: 支持长耗时操作的进度通知"
+      ],
+      "passes": true
+    },
+    {
+      "id": 6,
+      "title": "Elasticsearch 存储扩展",
+      "description": "扩展现有 ES 功能，支持文档结构化数据存储",
+      "steps": [
+        "阅读 bz_agent/rag/bm25_es_search.py 了解现有实现",
+        "创建 DocumentESService 类或扩展现有类",
+        "实现 save_chunk() 方法: 存储 chunk 到 ES",
+        "实现 save_chunks() 方法: 批量存储 chunks",
+        "实现 delete_document() 方法: 删除文档的所有 chunks",
+        "实现 search_chunks() 方法: 搜索 chunks（支持全文检索）",
+        "设计 ES 索引 mapping: 包含 document_id, chunk_id, content, refined_summary, keywords, entities, metadata",
+        "实现索引创建和更新逻辑",
+        "添加 IK 分词器配置用于中文分词",
+        "添加错误处理和重试逻辑"
+      ],
+      "passes": true
+    },
+    {
+      "id": 7,
+      "title": "API Schemas 定义",
+      "description": "定义 API 请求和响应的数据模型",
+      "steps": [
+        "创建 bz_agent/api/__init__.py 模块初始化文件",
+        "创建 bz_agent/api/schemas.py 文件",
+        "定义 UploadDocumentRequest 模型: file, split_strategy, chunk_size, chunk_overlap, enable_refinement",
+        "定义 DocumentUploadResponse 模型: code, message, data (包含 DocumentProcessResult)",
+        "定义 DocumentDeleteResponse 模型: code, message, data (包含 document_id, deleted_chunks)",
+        "定义 DocumentInfoResponse 模型: code, message, data (包含 DocumentInfo)",
+        "定义 SearchRequest 模型: query, top_k, use_rerank, filter",
+        "定义 SearchResponse 模型: code, message, data (包含 SearchResult)",
+        "定义通用响应模型: ApiResponse (code, message, data)",
+        "添加所有模型的字段验证规则",
+        "添加模型文档注释"
+      ],
+      "passes": true
+    },
+    {
+      "id": 8,
+      "title": "文档路由实现 (P0 核心)",
+      "description": "实现文档上传、删除、查询等 API 路由",
+      "steps": [
+        "创建 bz_agent/api/document_routes.py 文件",
+        "创建 FastAPI Router 实例: document_router = APIRouter(prefix='/api/v1/documents')",
+        "实现 POST /upload 路由: 文档上传接口",
+        "  - 文件类型验证（扩展名白名单）",
+        "  - 文件大小验证",
+        "  - 调用 DocumentProcessingService.process_document()",
+        "  - 返回 DocumentUploadResponse",
+        "实现 DELETE /{document_id} 路由: 删除文档接口",
+        "  - 验证 document_id 是否存在",
+        "  - 调用 DocumentProcessingService.delete_document()",
+        "  - 返回 DocumentDeleteResponse",
+        "实现 GET /{document_id} 路由: 获取文档详情接口",
+        "  - 调用 DocumentProcessingService.get_document_info()",
+        "  - 返回 DocumentInfoResponse",
+        "实现 GET /{document_id}/chunks 路由: 获取文档 chunks 接口",
+        "  - 调用 DocumentProcessingService.get_document_chunks()",
+        "  - 返回 chunks 列表",
+        "添加异常处理: 文件不存在、处理失败等",
+        "添加请求日志记录",
+        "添加 Swagger API 文档注解"
+      ],
+      "passes": true
+    },
+    {
+      "id": 9,
+      "title": "RAG 搜索路由实现",
+      "description": "实现 RAG 搜索 API 路由",
+      "steps": [
+        "创建 bz_agent/api/rag_routes.py 文件",
+        "创建 FastAPI Router 实例: rag_router = APIRouter(prefix='/api/v1/rag')",
+        "实现 GET /search 路由: RAG 搜索接口",
+        "  - 验证 query 参数",
+        "  - 解析 top_k, use_rerank, filter 参数",
+        "  - 调用向量搜索（Milvus）",
+        "  - 可选: 调用 Rerank 模型重排序",
+        "  - 查询 ES 补充元数据",
+        "  - 组装 SearchResponse",
+        "  - 返回搜索结果",
+        "实现 POST /search 路由: 支持复杂查询（可选）",
+        "添加结果分页支持",
+        "添加搜索日志记录",
+        "添加 Swagger API 文档注解"
+      ],
+      "passes": true
+    },
+    {
+      "id": 10,
+      "title": "FastAPI 应用入口",
+      "description": "创建 FastAPI 应用主入口文件",
+      "steps": [
+        "创建 api/main.py 文件",
+        "创建 FastAPI 应用实例: app = FastAPI(title='RAG Document API', version='1.0.0')",
+        "注册文档路由: app.include_router(document_router)",
+        "注册 RAG 路由: app.include_router(rag_router)",
+        "添加健康检查路由: GET /health",
+        "添加 CORS 中间件配置",
+        "添加全局异常处理器",
+        "添加请求日志中间件",
+        "添加启动事件: 初始化数据库连接、加载模型",
+        "添加关闭事件: 清理资源",
+        "添加 uvicorn 启动命令注释"
+      ],
+      "passes": true
+    },
+    {
+      "id": 11,
+      "title": "集成测试 (P1)",
+      "description": "编写完整的集成测试用例",
+      "steps": [
+        "创建 tests/api/test_document_routes.py 测试文件",
+        "创建 tests/api/test_rag_routes.py 测试文件",
+        "编写测试客户端: 使用 TestClient",
+        "测试上传 Word 文件: 验证解析、切分、存储",
+        "测试上传 PDF 文件: 验证解析、切分、存储",
+        "测试上传 Markdown 文件: 验证解析、切分、存储",
+        "测试上传不支持的文件: 验证错误返回",
+        "测试上传超大文件: 验证错误返回",
+        "测试删除文档: 验证 Milvus 和 ES 数据都被删除",
+        "测试查询文档: 验证返回正确信息",
+        "测试 RAG 搜索: 验证搜索结果正确",
+        "测试搜索不存在的文档: 验证空结果",
+        "测试并发上传: 验证系统稳定性",
+        "测试部分失败场景: 验证错误处理",
+        "添加测试数据清理逻辑"
+      ],
+      "passes": true
+    },
+    {
+      "id": 12,
+      "title": "Rerank 集成 (P2)",
+      "description": "集成 BGE-Reranker 实现搜索结果重排序",
+      "steps": [
+        "阅读 bz_agent/rag/bge_reranker.py 了解现有实现",
+        "创建 RerankService 类",
+        "实现 rerank() 方法: 接收 query 和 candidates，返回重排序结果",
+        "在 RAG 搜索路由中集成 RerankService",
+        "添加 rerank 参数控制是否启用重排序",
+        "添加性能监控: 记录 rerank 耗时",
+        "添加降级策略: rerank 失败时返回原始排序",
+        "编写 rerank 功能单元测试"
+      ],
+      "passes": true
+    },
+    {
+      "id": 13,
+      "title": "批量上传功能 (P2)",
+      "description": "支持批量上传多个文档",
+      "steps": [
+        "在 document_routes.py 添加 POST /batch 路由",
+        "实现批量上传逻辑: 接收多个文件",
+        "实现并行处理: 使用 asyncio 并发处理多个文档",
+        "实现进度追踪: 返回每个文档的处理状态",
+        "实现部分成功处理: 即使部分失败也返回成功的结果",
+        "添加批量上传速率限制",
+        "编写批量上传测试用例"
+      ],
+      "passes": true
+    },
+    {
+      "id": 14,
+      "title": "文档更新功能 (P3)",
+      "description": "支持文档内容的增量更新",
+      "steps": [
+        "实现文档版本管理: 在 DocumentInfo 中添加 version 字段",
+        "实现 PUT /{document_id} 路由: 更新文档",
+        "版本策略: 每次更新生成新版本或覆盖旧版本",
+        "实现历史版本查询: GET /{document_id}/versions",
+        "实现版本回滚: POST /{document_id}/rollback/{version}",
+        "更新存储逻辑: 处理版本关联的 chunks",
+        "编写版本管理测试用例"
+      ],
+      "passes": true
+    },
+    {
+      "id": 15,
+      "title": "部署和运维 (P3)",
+      "description": "部署准备和运维脚本",
+      "steps": [
+        "创建 docker/Dockerfile: 构建 API 服务镜像",
+        "创建 docker-compose.yml: 编排 Milvus, Elasticsearch, API 服务",
+        "创建部署脚本 scripts/deploy.sh",
+        "创建健康检查脚本 scripts/health_check.sh",
+        "添加 API 监控指标: Prometheus metrics",
+        "添加日志聚合配置",
+        "编写部署文档 docs/deployment.md",
+        "编写 API 使用文档 docs/api_usage.md"
+      ],
+      "passes": false
+    }
+  ]
+}

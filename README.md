@@ -15,7 +15,7 @@ A production-ready multi-agent orchestration framework built with LangGraph and 
 ## Architecture
 
 ```
-industrial-grade_agent scaffolding/
+industrial-grade_agent_scaffolding/
 ├── bz_agent/                 # Core agent framework
 │   ├── agents/              # Agent implementations
 │   ├── config/              # Configuration and LLM mapping
