@@ -1,0 +1,35 @@
+{
+  "project": "Spring FES Video",
+  "description": "故事转视频生成平台",
+  "tasks": [
+    {
+      "id": 1,
+      "title": "项目基础配置",
+      "description": "配置项目的基础设置和依赖",
+      "steps": [
+        "安装 Supabase 客户端: @supabase/supabase-js, @supabase/ssr",
+        "安装 UI 组件库: clsx, tailwind-merge",
+        "创建 .env.local 模板文件（包含所有必需的环境变量）",
+        "创建 lib/utils.ts 工具函数文件"
+      ],
+      "passes": true
+    },
+    {
+      "id": 2,
+      "title": "Supabase 数据库 Schema",
+      "description": "创建数据库表结构（含确认状态字段）",
+      "steps": [
+        "创建 projects 表 (id, user_id, title, story, style, stage, created_at, updated_at)",
+        "stage 字段: draft/scenes/images/videos/completed",
+        "创建 scenes 表，包含确认状态字段",
+        "scenes: (id, project_id, order_index, description, description_confirmed, image_status, image_confirmed, video_status, video_confirmed, created_at)",
+        "创建 images 表 (id, scene_id, storage_path, url, width, height, version, created_at)",
+        "创建 videos 表 (id, scene_id, storage_path, url, duration, task_id, version, created_at)",
+        "设置外键关系和索引",
+        "创建 Storage bucket: project-media",
+        "编写 SQL migration 文件到 supabase/migrations/"
+      ],
+      "passes": false
+    }
+    ]
+}
