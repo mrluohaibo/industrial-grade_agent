@@ -267,7 +267,7 @@
         "更新存储逻辑: 处理版本关联的 chunks",
         "编写版本管理测试用例"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": 15,

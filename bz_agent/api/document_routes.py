@@ -18,7 +18,11 @@ from bz_agent.api.schemas import (
     DocumentChunksResponse,
     DocumentDeleteResponse,
     DocumentInfoResponse,
+    DocumentRollbackResponse,
+    DocumentUpdateResponse,
     DocumentUploadResponse,
+    DocumentVersionInfoResponse,
+    DocumentVersionsResponse,
 )
 from bz_agent.rag.document_processor import DocumentProcessor
 from utils.config_init import application_conf
@@ -481,6 +485,238 @@ async def batch_upload_documents(
             "results": results
         }
     )
+
+
+@document_router.put(
+    "/{document_id}",
+    response_model=ApiResponse,
+    summary="Update a document",
+    description="Update a document by creating a new version"
+)
+async def update_document(
+    document_id: str,
+    file: UploadFile = File(..., description="New document file"),
+    split_strategy: str = Form(default="recursive", description="Splitting strategy"),
+    chunk_size: int = Form(default=500, ge=100, le=5000, description="Chunk size"),
+    chunk_overlap: int = Form(default=50, ge=0, le=500, description="Chunk overlap"),
+    enable_refinement: bool = Form(default=True, description="Enable semantic refinement"),
+):
+    """
+    Update a document by creating a new version.
+
+    The old version is retained in Elasticsearch for history.
+    Only the current version is kept in Milvus for vector search.
+    """
+    start_time = time.time()
+
+    # Validate file type
+    allowed_extensions = application_conf.get_properties(
+        "document.allowed_extensions", [".pdf", ".docx", ".md", ".txt"]
+    )
+    file_ext = "." + file.filename.split(".")[-1].lower() if "." in file.filename else ""
+
+    if file_ext not in allowed_extensions:
+        logger.warning(f"Unsupported file type: {file_ext}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file type. Allowed types: {', '.join(allowed_extensions)}"
+        )
+
+    # Validate file size
+    max_file_size = application_conf.get_properties("document.max_file_size", 10485760)
+    file_content = await file.read()
+
+    if len(file_content) > max_file_size:
+        logger.warning(f"File too large: {len(file_content)} bytes")
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File too large. Maximum size: {max_file_size} bytes"
+        )
+
+    try:
+        # Get processor
+        processor = get_processor()
+
+        # Check if document exists
+        doc_info = processor.get_document_info(document_id)
+        if doc_info is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Document not found: {document_id}"
+            )
+
+        logger.info(f"Updating document: {document_id}")
+
+        # Process document with new version
+        result = processor.update_document(
+            document_id=document_id,
+            file_bytes=file_content,
+            filename=file.filename,
+            split_strategy=split_strategy,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            enable_refinement=enable_refinement,
+        )
+
+        processing_time = time.time() - start_time
+        logger.info(
+            f"Document updated successfully: {file.filename} "
+            f"(version: {result.version}, time: {processing_time:.2f}s)"
+        )
+
+        # Convert chunks to response format
+        chunks_response = [
+            ChunkResult(
+                chunk_id=chunk.chunk_id,
+                chunk_index=chunk.chunk_index,
+                content=chunk.original_content,
+                refined_summary=chunk.refined_summary,
+                keywords=chunk.keywords,
+                entities=chunk.entities,
+                metadata=chunk.metadata,
+            )
+            for chunk in result.chunks
+        ]
+
+        update_response = DocumentUpdateResponse(
+            document_id=result.document_id,
+            filename=result.filename,
+            version=result.version,
+            previous_version=result.version - 1,
+            chunk_count=result.chunk_count,
+            status=result.status,
+            chunks=chunks_response,
+            errors=result.errors,
+        )
+
+        return ApiResponse(
+            code=0,
+            message="Document updated successfully",
+            data=update_response.model_dump(),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update document: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update document: {str(e)}"
+        )
+
+
+@document_router.get(
+    "/{document_id}/versions",
+    response_model=ApiResponse,
+    summary="Get document versions",
+    description="Get all versions of a document"
+)
+async def get_document_versions(document_id: str):
+    """
+    Get all versions of a document.
+
+    Returns version history including current status of each version.
+    """
+    try:
+        processor = get_processor()
+
+        logger.info(f"Getting versions for document: {document_id}")
+
+        versions_data = processor.get_document_versions(document_id)
+
+        # Convert to response format
+        versions_response = [
+            DocumentVersionInfoResponse(
+                document_id=v["document_id"],
+                version=v["version"],
+                filename=v["filename"],
+                upload_time=v["upload_time"],
+                chunk_count=v["chunk_count"],
+                current=v["current"],
+            )
+            for v in versions_data
+        ]
+
+        return ApiResponse(
+            code=0,
+            message=f"Found {len(versions_response)} versions",
+            data=DocumentVersionsResponse(
+                document_id=document_id,
+                total_versions=len(versions_response),
+                versions=versions_response,
+            ).model_dump(),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get document versions: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get document versions: {str(e)}"
+        )
+
+
+@document_router.post(
+    "/{document_id}/rollback/{version}",
+    response_model=ApiResponse,
+    summary="Rollback document version",
+    description="Rollback a document to a specific version"
+)
+async def rollback_document(document_id: str, version: int):
+    """
+    Rollback a document to a specific version.
+
+    Makes the specified version the current active version.
+    """
+    try:
+        processor = get_processor()
+
+        logger.info(f"Rolling back document {document_id} to version {version}")
+
+        # Validate version parameter
+        if version < 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Version must be greater than 0"
+            )
+
+        # Perform rollback
+        success = processor.rollback_document(document_id, version)
+
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to rollback document"
+            )
+
+        # Get document info after rollback
+        doc_info = processor.get_document_info(document_id)
+
+        rollback_response = DocumentRollbackResponse(
+            document_id=document_id,
+            version=version,
+            filename=doc_info.filename if doc_info else "unknown",
+            chunk_count=doc_info.chunk_count if doc_info else 0,
+            status="success",
+        )
+
+        logger.info(f"Document rolled back successfully to version {version}")
+
+        return ApiResponse(
+            code=0,
+            message="Document rolled back successfully",
+            data=rollback_response.model_dump(),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to rollback document: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to rollback document: {str(e)}"
+        )
 
 
 # ============================================================================

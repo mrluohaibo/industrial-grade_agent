@@ -590,6 +590,219 @@ class DocumentProcessor:
                 search_time_ms=0,
             )
 
+    def update_document(
+        self,
+        document_id: str,
+        file_bytes: bytes,
+        filename: str,
+        split_strategy: str = "recursive",
+        chunk_size: int = 500,
+        chunk_overlap: int = 50,
+        enable_refinement: bool = True,
+    ) -> DocumentProcessResult:
+        """
+        Update a document by creating a new version.
+
+        Args:
+            document_id: Document ID to update
+            file_bytes: New file content
+            filename: New filename
+            split_strategy: Splitting strategy
+            chunk_size: Maximum chunk size
+            chunk_overlap: Chunk overlap size
+            enable_refinement: Whether to enable semantic refinement
+
+        Returns:
+            DocumentProcessResult with updated version info
+        """
+        self._report_progress(0, 6, "Starting document update")
+
+        errors = []
+
+        try:
+            # Step 1: Get current version
+            self._report_progress(1, 6, "Getting current document version")
+            current_version = 1
+            if self._es_service:
+                current_version = self._es_service.get_current_version(document_id) or 1
+
+            new_version = current_version + 1
+
+            # Step 2: Mark current version as inactive
+            self._report_progress(2, 6, f"Deactivating version {current_version}")
+            if self._es_service:
+                self._es_service.mark_version_as_current(
+                    document_id, -1
+                )  # Deactivate all
+
+            # Step 3: Delete old chunks from Milvus (keeping in ES for history)
+            self._report_progress(3, 6, "Deleting old chunks from Milvus")
+            self._delete_from_milvus(document_id)
+
+            # Step 4: Parse file content
+            self._report_progress(4, 6, "Parsing file content")
+            text_content = self._file_parser.parse_file_bytes(file_bytes, filename)
+
+            if not text_content.strip():
+                raise ValueError("File content is empty")
+
+            # Step 5: Split document into chunks
+            self._report_progress(5, 6, "Splitting document into chunks")
+            splitter = DocumentSplitter(
+                strategy=split_strategy,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+            )
+            split_results = splitter.split_text(text_content, document_id=document_id)
+
+            if not split_results:
+                raise ValueError("No chunks generated from document")
+
+            # Step 6: Refine chunks (if enabled)
+            self._report_progress(6, 6, f"Refining {len(split_results)} chunks")
+            refined_chunks = self._refine_chunks(
+                split_results, enable_refinement
+            )
+
+            # Add version information to chunks
+            for chunk in refined_chunks:
+                chunk.metadata["version"] = new_version
+                chunk.metadata["current"] = True
+                chunk.metadata["filename"] = filename
+
+            # Step 7: Vectorize and store
+            self._report_progress(6, 6, "Vectorizing and storing chunks")
+            stored_chunks = self._store_chunks(
+                refined_chunks, document_id, filename
+            )
+
+            # Step 8: Mark new version as current
+            if self._es_service:
+                self._es_service.mark_version_as_current(
+                    document_id, new_version
+                )
+
+            self._report_progress(6, 6, "Document update completed")
+
+            return DocumentProcessResult(
+                document_id=document_id,
+                filename=filename,
+                chunk_count=len(stored_chunks),
+                status="success",
+                version=new_version,
+                chunks=stored_chunks,
+                errors=errors,
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to update document {document_id}: {e}")
+            errors.append(str(e))
+
+            return DocumentProcessResult(
+                document_id=document_id,
+                filename=filename,
+                chunk_count=0,
+                status="failed",
+                version=current_version,
+                chunks=[],
+                errors=errors,
+            )
+
+    def get_document_versions(
+        self, document_id: str
+    ) -> List[Any]:
+        """
+        Get all versions of a document.
+
+        Args:
+            document_id: Document ID
+
+        Returns:
+            List of document versions
+        """
+        try:
+            if self._es_service:
+                return self._es_service.get_document_versions(document_id)
+            return []
+        except Exception as e:
+            logger.error(f"Failed to get document versions: {e}")
+            return []
+
+    def rollback_document(
+        self, document_id: str, target_version: int
+    ) -> bool:
+        """
+        Rollback a document to a specific version.
+
+        Args:
+            document_id: Document ID
+            target_version: Version to rollback to
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            logger.info(f"Rolling back document {document_id} to version {target_version}")
+
+            # Step 1: Get chunks for the target version
+            if not self._es_service:
+                logger.error("Elasticsearch service not available for rollback")
+                return False
+
+            versions = self._es_service.get_document_versions(document_id)
+            target_version_info = next(
+                (v for v in versions if v["version"] == target_version), None
+            )
+
+            if target_version_info is None:
+                logger.error(f"Version {target_version} not found for document {document_id}")
+                return False
+
+            # Step 2: Get all chunks for the target version
+            all_chunks = self._es_service.get_document_chunks(document_id)
+            target_chunks = [
+                c for c in all_chunks
+                if c.get("metadata", {}).get("version") == target_version
+            ]
+
+            if not target_chunks:
+                logger.error(f"No chunks found for version {target_version}")
+                return False
+
+            # Step 3: Delete current chunks from Milvus
+            self._delete_from_milvus(document_id)
+
+            # Step 4: Re-insert target version chunks to Milvus
+            for chunk in target_chunks:
+                # Generate embedding for chunk content
+                embeddings = self._encode_embeddings([chunk["content"]])
+                chunk_id = chunk.get("chunk_id", "")
+
+                # Prepare Milvus data
+                milvus_data = {
+                    "id": int(chunk_id.split("_")[-1]),
+                    "document_id": document_id,
+                    "origin_content": chunk.get("content", ""),
+                    "vector": embeddings[0].tolist() if hasattr(embeddings[0], 'tolist') else embeddings[0],
+                }
+
+                self._milvus_client.client.insert(
+                    collection_name=self.COLLECTION_NAME,
+                    data=[milvus_data]
+                )
+
+            self._milvus_client.client.flush(self.COLLECTION_NAME)
+
+            # Step 5: Mark target version as current
+            self._es_service.mark_version_as_current(document_id, target_version)
+
+            logger.info(f"Successfully rolled back document {document_id} to version {target_version}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to rollback document {document_id} to version {target_version}: {e}")
+            return False
+
     def _report_progress(self, current: int, total: int, message: str):
         """Report progress if callback is set."""
         if self.progress_callback:

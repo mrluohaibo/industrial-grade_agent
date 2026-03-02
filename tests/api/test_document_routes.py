@@ -379,6 +379,216 @@ class TestDocumentRoutes:
             data = response.json()
             assert data["code"] == 0
 
+    def test_update_document(self, client, test_txt_file):
+        """Test updating a document."""
+        # First upload a document
+        file_content, filename = test_txt_file
+
+        upload_response = client.post(
+            "/api/v1/documents/upload",
+            files={"file": (filename, file_content, "text/plain")},
+            data={
+                "split_strategy": "recursive",
+                "chunk_size": "200",
+                "chunk_overlap": "20",
+                "enable_refinement": "false",
+            }
+        )
+
+        assert upload_response.status_code == 200
+        upload_data = upload_response.json()
+        document_id = upload_data["data"]["document_id"]
+        initial_version = upload_data["data"]["version"]
+
+        # Update the document
+        updated_content = b"This is updated content for version 2."
+
+        update_response = client.put(
+            f"/api/v1/documents/{document_id}",
+            files={"file": (filename, updated_content, "text/plain")},
+            data={
+                "split_strategy": "recursive",
+                "chunk_size": "200",
+                "chunk_overlap": "20",
+                "enable_refinement": "false",
+            }
+        )
+
+        assert update_response.status_code == 200
+        update_data = update_response.json()
+        assert update_data["code"] == 0
+        assert update_data["data"]["document_id"] == document_id
+        assert update_data["data"]["version"] == initial_version + 1
+        assert update_data["data"]["status"] == "success"
+
+    def test_update_nonexistent_document(self, client, test_txt_file):
+        """Test updating a non-existent document."""
+        fake_id = "9999999999999999999"
+        file_content, filename = test_txt_file
+
+        response = client.put(
+            f"/api/v1/documents/{fake_id}",
+            files={"file": (filename, file_content, "text/plain")},
+            data={
+                "split_strategy": "recursive",
+            }
+        )
+
+        assert response.status_code == 404
+
+    def test_get_document_versions(self, client, test_txt_file):
+        """Test getting document versions."""
+        # First upload and update a document
+        file_content, filename = test_txt_file
+
+        # Upload initial version
+        upload_response = client.post(
+            "/api/v1/documents/upload",
+            files={"file": (filename, file_content, "text/plain")},
+            data={
+                "split_strategy": "recursive",
+                "chunk_size": "200",
+                "chunk_overlap": "20",
+                "enable_refinement": "false",
+            }
+        )
+
+        assert upload_response.status_code == 200
+        document_id = upload_response.json()["data"]["document_id"]
+
+        # Update to create version 2
+        updated_content = b"Updated content for version 2."
+        client.put(
+            f"/api/v1/documents/{document_id}",
+            files={"file": (filename, updated_content, "text/plain")},
+            data={
+                "split_strategy": "recursive",
+                "chunk_size": "200",
+                "chunk_overlap": "20",
+                "enable_refinement": "false",
+            }
+        )
+
+        # Get versions
+        versions_response = client.get(f"/api/v1/documents/{document_id}/versions")
+
+        assert versions_response.status_code == 200
+        versions_data = versions_response.json()
+        assert versions_data["code"] == 0
+        assert versions_data["data"]["total_versions"] >= 2
+        assert len(versions_data["data"]["versions"]) >= 2
+
+        # Check current version is marked correctly
+        versions = versions_data["data"]["versions"]
+        current_version = next((v for v in versions if v["current"]), None)
+        assert current_version is not None
+        assert current_version["version"] == 2
+
+    def test_rollback_document(self, client, test_txt_file):
+        """Test rolling back a document to a previous version."""
+        # First upload and update a document
+        file_content, filename = test_txt_file
+
+        # Upload initial version
+        upload_response = client.post(
+            "/api/v1/documents/upload",
+            files={"file": (filename, file_content, "text/plain")},
+            data={
+                "split_strategy": "recursive",
+                "chunk_size": "200",
+                "chunk_overlap": "20",
+                "enable_refinement": "false",
+            }
+        )
+
+        assert upload_response.status_code == 200
+        document_id = upload_response.json()["data"]["document_id"]
+        initial_version = upload_response.json()["data"]["version"]
+
+        # Update to create version 2
+        updated_content = b"Updated content for version 2."
+        client.put(
+            f"/api/v1/documents/{document_id}",
+            files={"file": (filename, updated_content, "text/plain")},
+            data={
+                "split_strategy": "recursive",
+                "chunk_size": "200",
+                "chunk_overlap": "20",
+                "enable_refinement": "false",
+            }
+        )
+
+        # Rollback to version 1
+        rollback_response = client.post(
+            f"/api/v1/documents/{document_id}/rollback/{initial_version}"
+        )
+
+        assert rollback_response.status_code == 200
+        rollback_data = rollback_response.json()
+        assert rollback_data["code"] == 0
+        assert rollback_data["data"]["version"] == initial_version
+        assert rollback_data["data"]["status"] == "success"
+
+        # Verify rollback by checking current version
+        versions_response = client.get(f"/api/v1/documents/{document_id}/versions")
+        versions_data = versions_response.json()
+        versions = versions_data["data"]["versions"]
+        current_version = next((v for v in versions if v["current"]), None)
+        assert current_version is not None
+        assert current_version["version"] == initial_version
+
+    def test_rollback_invalid_version(self, client, test_txt_file):
+        """Test rolling back to an invalid version."""
+        # First upload a document
+        file_content, filename = test_txt_file
+
+        upload_response = client.post(
+            "/api/v1/documents/upload",
+            files={"file": (filename, file_content, "text/plain")},
+            data={
+                "split_strategy": "recursive",
+                "chunk_size": "200",
+                "chunk_overlap": "20",
+                "enable_refinement": "false",
+            }
+        )
+
+        assert upload_response.status_code == 200
+        document_id = upload_response.json()["data"]["document_id"]
+
+        # Try to rollback to invalid version
+        response = client.post(
+            f"/api/v1/documents/{document_id}/rollback/0"
+        )
+
+        assert response.status_code == 400
+
+    def test_version_in_document_info(self, client, test_txt_file):
+        """Test that version is included in document info."""
+        file_content, filename = test_txt_file
+
+        response = client.post(
+            "/api/v1/documents/upload",
+            files={"file": (filename, file_content, "text/plain")},
+            data={
+                "split_strategy": "recursive",
+                "chunk_size": "200",
+                "chunk_overlap": "20",
+                "enable_refinement": "false",
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        document_id = data["data"]["document_id"]
+
+        # Get document info
+        info_response = client.get(f"/api/v1/documents/{document_id}")
+
+        assert info_response.status_code == 200
+        info_data = info_response.json()
+        assert info_data["data"]["version"] == 1  # First upload should be version 1
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

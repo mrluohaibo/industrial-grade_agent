@@ -92,6 +92,7 @@ class DocumentProcessResult:
     filename: str
     chunk_count: int
     status: str  # "success" | "partial" | "failed"
+    version: int = 1  # Document version number
     chunks: List[ChunkDocument] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
 
@@ -104,6 +105,19 @@ class DocumentInfo:
     filename: str
     upload_time: datetime
     chunk_count: int
+    version: int = 1  # Document version number
+
+
+@dataclass
+class DocumentVersionInfo:
+    """Information about a document version."""
+
+    document_id: str
+    version: int
+    filename: str
+    upload_time: datetime
+    chunk_count: int
+    current: bool = False  # Whether this is the current version
 
 
 @dataclass

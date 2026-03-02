@@ -120,6 +120,7 @@ class DocumentUploadResponse(BaseModel):
     filename: str = Field(..., description="Original filename")
     chunk_count: int = Field(..., description="Number of chunks created")
     status: str = Field(..., description="Processing status: success/partial/failed")
+    version: int = Field(default=1, description="Document version number")
     chunks: List[ChunkResult] = Field(
         default_factory=list,
         description="List of processed chunks"
@@ -136,6 +137,7 @@ class DocumentUploadResponse(BaseModel):
                 "filename": "document.pdf",
                 "chunk_count": 5,
                 "status": "success",
+                "version": 1,
                 "chunks": [],
                 "errors": []
             }
@@ -154,6 +156,7 @@ class DocumentInfoResponse(BaseModel):
     filename: str = Field(..., description="Original filename")
     upload_time: str = Field(..., description="Upload timestamp")
     chunk_count: int = Field(..., description="Number of chunks")
+    version: int = Field(default=1, description="Document version number")
 
     class Config:
         json_schema_extra = {
@@ -161,7 +164,8 @@ class DocumentInfoResponse(BaseModel):
                 "document_id": "1234567890123456789",
                 "filename": "document.pdf",
                 "upload_time": "2026-03-02T10:00:00",
-                "chunk_count": 5
+                "chunk_count": 5,
+                "version": 1
             }
         }
 
@@ -398,6 +402,104 @@ class BatchUploadResponse(BaseModel):
 
 
 # ============================================================================
+# Document Version Schemas
+# ============================================================================
+
+class DocumentVersionInfoResponse(BaseModel):
+    """Response model for document version information."""
+
+    document_id: str = Field(..., description="Document ID")
+    version: int = Field(..., description="Version number")
+    filename: str = Field(..., description="Filename at this version")
+    upload_time: str = Field(..., description="Upload timestamp for this version")
+    chunk_count: int = Field(..., description="Number of chunks in this version")
+    current: bool = Field(..., description="Whether this is the current version")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "document_id": "1234567890123456789",
+                "version": 2,
+                "filename": "document_v2.pdf",
+                "upload_time": "2026-03-02T12:00:00",
+                "chunk_count": 8,
+                "current": True
+            }
+        }
+
+
+class DocumentVersionsResponse(BaseModel):
+    """Response model for document versions list."""
+
+    document_id: str = Field(..., description="Document ID")
+    total_versions: int = Field(..., description="Total number of versions")
+    versions: List[DocumentVersionInfoResponse] = Field(..., description="List of document versions")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "document_id": "1234567890123456789",
+                "total_versions": 3,
+                "versions": []
+            }
+        }
+
+
+class DocumentUpdateResponse(BaseModel):
+    """Response model for document update."""
+
+    document_id: str = Field(..., description="Document ID")
+    filename: str = Field(..., description="Updated filename")
+    version: int = Field(..., description="New version number")
+    previous_version: int = Field(..., description="Previous version number")
+    chunk_count: int = Field(..., description="Number of chunks created")
+    status: str = Field(..., description="Update status: success/failed")
+    chunks: List[ChunkResult] = Field(
+        default_factory=list,
+        description="List of processed chunks"
+    )
+    errors: List[str] = Field(
+        default_factory=list,
+        description="List of errors if any"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "document_id": "1234567890123456789",
+                "filename": "document_v2.pdf",
+                "version": 2,
+                "previous_version": 1,
+                "chunk_count": 8,
+                "status": "success",
+                "chunks": [],
+                "errors": []
+            }
+        }
+
+
+class DocumentRollbackResponse(BaseModel):
+    """Response model for document version rollback."""
+
+    document_id: str = Field(..., description="Document ID")
+    version: int = Field(..., description="Rolled back to version number")
+    filename: str = Field(..., description="Filename at rolled back version")
+    chunk_count: int = Field(..., description="Number of chunks")
+    status: str = Field(..., description="Rollback status: success/failed")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "document_id": "1234567890123456789",
+                "version": 1,
+                "filename": "document_v1.pdf",
+                "chunk_count": 5,
+                "status": "success"
+            }
+        }
+
+
+# ============================================================================
 # Export all schemas
 # ============================================================================
 
@@ -413,6 +515,11 @@ __all__ = [
     "DocumentChunksResponse",
     # Document delete
     "DocumentDeleteResponse",
+    # Document version
+    "DocumentVersionInfoResponse",
+    "DocumentVersionsResponse",
+    "DocumentUpdateResponse",
+    "DocumentRollbackResponse",
     # Search
     "SearchRequest",
     "SearchItem",

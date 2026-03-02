@@ -67,8 +67,16 @@ class DocumentESService:
                     "properties": {
                         "filename": {"type": "keyword"},
                         "upload_time": {"type": "date"},
-                        "split_strategy": {"type": "keyword"}
+                        "split_strategy": {"type": "keyword"},
+                        "version": {"type": "integer"},
+                        "current": {"type": "boolean"}
                     }
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "current": {
+                    "type": "boolean"
                 }
             }
         },
@@ -457,6 +465,226 @@ class DocumentESService:
         except Exception as e:
             logger.error(f"Failed to get chunk count: {e}")
             return 0
+
+    # ============================================================================
+    # Version Management Methods
+    # ============================================================================
+
+    def get_document_versions(self, document_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all versions of a document.
+
+        Args:
+            document_id: Document ID
+
+        Returns:
+            List of document versions with metadata
+        """
+        try:
+            query = {
+                "query": {
+                    "term": {
+                        "document_id": document_id
+                    }
+                },
+                "size": 1,  # Get one chunk per version
+                "sort": [
+                    {"metadata.version": {"order": "desc"}}
+                ],
+                "collapse": {
+                    "field": "metadata.version"
+                }
+            }
+
+            response = self._client.search(
+                index=self.INDEX_NAME,
+                body=query
+            )
+
+            # Extract version information
+            versions = []
+            for hit in response["hits"]["hits"]:
+                source = hit["_source"]
+                metadata = source.get("metadata", {})
+                version = metadata.get("version", 1)
+
+                # Check if we already have this version
+                existing = next((v for v in versions if v["version"] == version), None)
+                if existing is None:
+                    versions.append({
+                        "document_id": document_id,
+                        "version": version,
+                        "filename": metadata.get("filename", "unknown"),
+                        "upload_time": metadata.get("upload_time", ""),
+                        "chunk_count": 0,  # Will be updated below
+                        "current": metadata.get("current", True)
+                    })
+
+                # Count chunks for this version
+                version_data = next(v for v in versions if v["version"] == version)
+                version_data["chunk_count"] += 1
+
+            # Sort by version descending
+            versions.sort(key=lambda x: x["version"], reverse=True)
+
+            logger.info(f"Found {len(versions)} versions for document {document_id}")
+            return versions
+
+        except Exception as e:
+            logger.error(f"Failed to get document versions: {e}")
+            return []
+
+    def mark_version_as_current(
+        self, document_id: str, target_version: int
+    ) -> bool:
+        """
+        Mark a specific version as current by deactivating others.
+
+        Args:
+            document_id: Document ID
+            target_version: Version to mark as current
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Deactivate all versions first
+            update_by_query_body = {
+                "query": {
+                    "term": {
+                        "document_id": document_id
+                    }
+                },
+                "script": {
+                    "source": "ctx._source.current = false",
+                    "lang": "painless"
+                }
+            }
+
+            self._client.update_by_query(
+                index=self.INDEX_NAME,
+                body=update_by_query_body
+            )
+
+            # Activate target version
+            target_query_body = {
+                "query": {
+                    "bool": {
+                        "must": [
+                            {"term": {"document_id": document_id}},
+                            {"term": {"metadata.version": target_version}}
+                        ]
+                    }
+                },
+                "script": {
+                    "source": "ctx._source.current = true",
+                    "lang": "painless"
+                }
+            }
+
+            self._client.update_by_query(
+                index=self.INDEX_NAME,
+                body=target_query_body
+            )
+
+            logger.info(f"Marked version {target_version} as current for document {document_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to mark version as current: {e}")
+            return False
+
+    def delete_old_versions(
+        self, document_id: str, keep_versions: int = 5
+    ) -> int:
+        """
+        Delete old versions of a document, keeping only the most recent N.
+
+        Args:
+            document_id: Document ID
+            keep_versions: Number of recent versions to keep
+
+        Returns:
+            Number of deleted versions
+        """
+        try:
+            versions = self.get_document_versions(document_id)
+
+            if len(versions) <= keep_versions:
+                logger.info(f"No old versions to delete for document {document_id}")
+                return 0
+
+            # Versions to delete (excluding the most recent N)
+            versions_to_delete = versions[keep_versions:]
+            deleted_count = 0
+
+            for version_info in versions_to_delete:
+                version = version_info["version"]
+                query = {
+                    "query": {
+                        "bool": {
+                            "must": [
+                                {"term": {"document_id": document_id}},
+                                {"term": {"metadata.version": version}}
+                            ]
+                        }
+                    }
+                }
+
+                response = self._client.delete_by_query(
+                    index=self.INDEX_NAME,
+                    body=query
+                )
+
+                deleted_count += response.get("deleted", 0)
+
+            logger.info(f"Deleted {deleted_count} chunks for old versions of document {document_id}")
+            return deleted_count
+
+        except Exception as e:
+            logger.error(f"Failed to delete old versions: {e}")
+            return 0
+
+    def get_current_version(self, document_id: str) -> Optional[int]:
+        """
+        Get the current (active) version of a document.
+
+        Args:
+            document_id: Document ID
+
+        Returns:
+            Current version number, or None if not found
+        """
+        try:
+            query = {
+                "query": {
+                    "bool": {
+                        "must": [
+                            {"term": {"document_id": document_id}},
+                            {"term": {"metadata.current": True}}
+                        ]
+                    }
+                },
+                "size": 1,
+                "sort": [
+                    {"metadata.version": {"order": "desc"}}
+                ]
+            }
+
+            response = self._client.search(
+                index=self.INDEX_NAME,
+                body=query
+            )
+
+            hits = response["hits"]["hits"]
+            if hits:
+                return hits[0]["_source"].get("metadata", {}).get("version", 1)
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Failed to get current version: {e}")
+            return None
 
 
 # ============================================================================
