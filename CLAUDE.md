@@ -15,12 +15,13 @@ This is an industrial-grade multi-agent system built with LangGraph and LangChai
 - `bz_agent/prompts/` - Prompt templates in Markdown with custom template syntax (`<<VAR>>`)
 - `bz_agent/tools/` - Tool implementations (python_repl, browser, bash, file_management, mcp, rag_tool)
 - `bz_agent/storage/` - MongoDB-based storage for conversations and prompts
-- `bz_agent/rag/` - RAG module with BM25 search, embedding, and Milvus vector storage
+- `bz_agent/rag/` - RAG module with BM25 search, embedding, Milvus, document processing, and reranking
 - `bz_agent/mcp/` - Model Context Protocol server and HTTP transport implementations
+- `bz_agent/api/` - FastAPI-based RAG document processing API
 
 **Agent Types and LLM Configuration:**
 - Agent-LLM mapping in `bz_agent/config/agents_map.py`
-- LLM types: `reasoning`, `basic`, `vision`, `local_basic`
+- LLM types: `reasoning`, `basic`, `vision`, `local_basic`, `rag`
 - Environment configuration from `config/llm.env`
 
 ### Workflow Graph
@@ -28,16 +29,72 @@ This is an industrial-grade multi-agent system built with LangGraph and LangChai
 The main workflow (defined in `bz_agent/graph/builder.py`) follows this flow:
 1. `planner` - Generates execution plan (uses reasoning LLM in deep_thinking_mode)
 2. `supervisor` - Routes tasks to worker agents
-3. Worker agents: `coder`, `browser`, `url_to_markdown`, `reporter`
+3. Worker agents: `coder`, `browser`, `url_to_markdown`, `rag`, `reporter`
 4. Each worker returns results wrapped in `<response>` tags
 
-State is managed via `bz_agent/graph/types.py` which extends `MessagesState` with `TEAM_MEMBERS`, `next`, `full_plan`, `deep_thinking_mode`, `search_before_planning`.
+State is managed via `bz_agent/graph/types.py` which extends `MessagesState` with `TEAM_MEMBERS`, `next`, `full_plan`, `deep_thinking_mode`, `search_before_planning`, `session_id`.
 
 **Session Context Management:**
 - Workflows use `context_middleware` for pre/post-processing
 - Pre-process: Loads conversation history from MongoDB if `session_id` provided
 - Post-process: Saves messages to MongoDB
 - New sessions are auto-generated if no `session_id` provided
+
+### RAG Document Processing System
+
+The RAG module (`bz_agent/rag/`) provides enterprise-grade document processing:
+
+**DocumentProcessor (`document_processor.py`):**
+- Orchestrates the entire document processing pipeline
+- Supports PDF, DOCX, Markdown, and TXT files
+- Integrates with Milvus (vector storage) and Elasticsearch (full-text search)
+
+**DocumentSplitter (`document_splitter.py`):**
+Multiple splitting strategies for optimal chunk quality:
+- `recursive` - Recursive character splitting with Chinese-aware delimiters
+- `markdown_header` - Split by Markdown headers
+- `semantic` - Semantic-based splitting using embedding similarity
+- `hybrid` - Combines multiple strategies for best results
+
+**Semantic Refinement (`semantic_refiner.py`):**
+- Generates refined summaries for each chunk
+- Extracts keywords and entities using LLM
+- Improves search result relevance
+
+**BM25 Reranker (`bge_reranker.py`):**
+- Uses BGE-Reranker-Large model for result reranking
+- Reorders search results based on query-chunk relevance
+- Significantly improves search quality
+
+**File Parser (`file_parser.py`):**
+- Parses PDF, DOCX, Markdown, and TXT files
+- Converts to plain text for processing
+
+**RAG Configuration (from `config/application.yaml`):**
+- `milvus`: IP, port, BGE-M3 model path, BGE-Reranker path
+- `es`: Elasticsearch host, username, password for BM25 search
+- `document`: Storage path, max file size, allowed extensions
+- `semantic_refinement`: Enable/disable, LLM model, max keywords/entities
+
+### FastAPI RAG API (`bz_agent/api/`)
+
+**Main App (`api/main.py`):**
+- FastAPI application with CORS middleware
+- Lifespan management for DocumentProcessor initialization
+- Global exception handling and request logging
+- Health check endpoint at `/health`
+
+**Document Routes (`document_routes.py`):**
+- `POST /api/v1/documents/upload` - Upload and process documents
+- `DELETE /api/v1/documents/{document_id}` - Delete document
+- `GET /api/v1/documents/{document_id}` - Get document info
+- `GET /api/v1/documents/{document_id}/chunks` - Get document chunks
+- `GET /api/v1/documents/` - List documents (paginated)
+- `POST /api/v1/documents/batch` - Batch upload multiple documents
+
+**RAG Routes (`rag_routes.py`):**
+- `GET/POST /api/v1/rag/search` - Semantic search with optional reranking
+- `GET /api/v1/rag/health` - RAG service health check (Milvus, ES, embedding)
 
 ### Native Agent Framework
 
@@ -79,18 +136,6 @@ python -m bz_agent.run_mcp -i
 # Single prompt
 python -m bz_agent.run_mcp -p "your prompt here"
 ```
-
-### RAG Module (`bz_agent/rag/`)
-
-- `bm25_es_search.py` - BM25 search using Elasticsearch with IK tokenizer for Chinese
-- `embedding_data_handler.py` - Text embedding with BGE-M3 model
-- `save_embedding_to_milvus.py` - Vector storage in Milvus database
-- `split_data_handler.py` - Document chunking and splitting for RAG
-- `multi_call_rag_api.py` - Multi-call RAG API integration
-
-**RAG Configuration (from `config/application.yaml`):**
-- Milvus: IP, port, BGE-M3 model path
-- Elasticsearch: host, username, password for BM25 search
 
 ### Storage Layer (`bz_agent/storage/`)
 
@@ -160,6 +205,17 @@ from bz_agent.workflow import request_url_content_to_markdown
 content = request_url_content_to_markdown("https://example.com")
 ```
 
+**Running FastAPI RAG API:**
+```bash
+# Start API server (using uvicorn directly)
+python -m api.main
+
+# Or with uvicorn
+uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+
+# API docs available at http://localhost:8000/docs
+```
+
 **MCP Agent:**
 ```bash
 # Run MCP client with stdio connection (default)
@@ -173,6 +229,24 @@ python -m bz_agent.run_mcp -i
 
 # Single prompt
 python -m bz_agent.run_mcp -p "your prompt here"
+```
+
+**Running Tests:**
+```bash
+# Run all tests
+pytest
+
+# Run specific test file
+pytest tests/api/test_document_routes.py
+
+# Run with verbose output
+pytest -v
+
+# Run specific test
+pytest tests/api/test_document_routes.py::TestDocumentRoutes::test_upload_markdown
+
+# Run with coverage
+pytest --cov=bz_agent --cov-report=html
 ```
 
 **Prompt Management:**
@@ -237,7 +311,7 @@ pip install -r requirements-dev.txt
 - Use explicit transaction handling with `commit()`/`rollback()`
 
 **Configuration:**
-- Application config: `config/application.yaml` (databases, proxy, prompt, session, milvus, es)
+- Application config: `config/application.yaml` (databases, proxy, prompt, session, milvus, es, document, api, semantic_refinement)
 - LLM config: `config/llm.env` (API keys, model names, base URLs)
 - Access via `utils.config_init.application_conf.get_properties("path.to.key")`
 
@@ -245,3 +319,9 @@ pip install -r requirements-dev.txt
 - Custom logger from `utils/logger_config.py`
 - Logs written to `logs/` directory with daily rotation
 - Console output uses colorlog with color-coded levels
+
+**Testing:**
+- Tests are located in `tests/` directory
+- Use `pytest` for running tests
+- API tests use `fastapi.testclient.TestClient`
+- Test fixtures defined in individual test files
