@@ -5,7 +5,9 @@
       "Bash(cat:*)",
       "Bash(git:*)",
       "Bash(dir F:\\\\python_pro\\\\industrial-grade\\\\ agent\\\\ scaffolding\\\\bz_agent\\\\rag:*)",
-      "Bash(bz_agent/rag/bge_reranker.py:*)"
+      "Bash(bz_agent/rag/bge_reranker.py:*)",
+      "Bash(python:*)",
+      "Bash(ruff check:*)"
     ]
   }
 }
